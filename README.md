@@ -1,6 +1,6 @@
 # pushoo-chan-gover (Go 版)
 
-🚀 使用 Go 重构的 pushoo-chan 推送通知管理工具，完全兼容现有 `config.yaml` 格式。
+🚀 使用 Go 重构的 [pushoo-chan](https://github.com/NyaMisty/pushoo-chan) 推送通知管理工具，完全兼容现有 `config.yaml` 格式。
 
 ## ✨ 特性
 
