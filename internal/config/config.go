@@ -2,6 +2,8 @@ package config
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -19,6 +21,7 @@ type Config struct {
 	ChannelGroups  []ChannelGroupConfig `yaml:"channel_groups,omitempty"`
 	DefaultChannel string               `yaml:"default_channel,omitempty"`
 	Auth           AuthConfig           `yaml:"auth,omitempty"`
+	PushToken      PushTokenConfig      `yaml:"push_token,omitempty"`
 
 	// Optional extensions (ignored by older configs):
 	SQLite SQLiteConfig `yaml:"sqlite,omitempty"`
@@ -31,6 +34,11 @@ type SQLiteConfig struct {
 type AuthConfig struct {
 	User string `yaml:"user,omitempty"`
 	Pass string `yaml:"pass,omitempty"`
+}
+
+type PushTokenConfig struct {
+	Enabled bool   `yaml:"enabled,omitempty"`
+	Token   string `yaml:"token,omitempty"`
 }
 
 type ChannelConfig struct {
@@ -89,6 +97,13 @@ default_channel: stub_channel
 auth:
   user: pushoo
   pass: pushoo
+
+# Push API token protection (optional)
+# When enabled, all push requests must include the token parameter
+# Example: /send?token=YOUR_TOKEN&text=Hello&desp=World
+push_token:
+  enabled: false  # Set to true to enable token verification
+  token: ""       # Will be auto-generated on first run if empty
 
 # SQLite database for storing push history (optional)
 # sqlite:
@@ -155,6 +170,25 @@ func (m *Manager) Reload(_ context.Context) error {
 	var cfg Config
 	if err := yaml.Unmarshal(raw, &cfg); err != nil {
 		return err
+	}
+
+	// Auto-generate push token if enabled but token is empty
+	if cfg.PushToken.Enabled && cfg.PushToken.Token == "" {
+		log.Printf("[config] Push token is enabled but empty, generating random token...")
+		cfg.PushToken.Token = generateRandomToken()
+
+		// Save the updated config with the new token
+		updatedRaw, err := yaml.Marshal(&cfg)
+		if err != nil {
+			log.Printf("[config] Warning: failed to marshal config with new token: %v", err)
+		} else {
+			if err := os.WriteFile(m.path, updatedRaw, 0o644); err != nil {
+				log.Printf("[config] Warning: failed to save config with new token: %v", err)
+			} else {
+				log.Printf("[config] Generated and saved new push token: %s", cfg.PushToken.Token)
+				raw = updatedRaw
+			}
+		}
 	}
 
 	// Update last modification time
@@ -264,3 +298,13 @@ func (m *Manager) checkAndReload() {
 	}
 }
 
+
+// generateRandomToken generates a random token for push API authentication
+func generateRandomToken() string {
+	b := make([]byte, 32) // 32 bytes = 64 hex characters
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to timestamp-based token if random generation fails
+		return fmt.Sprintf("token_%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
+}

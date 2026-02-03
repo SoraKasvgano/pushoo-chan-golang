@@ -7,6 +7,7 @@
 - 🔧 **纯 Go 实现**：使用标准库 `net/http`，无需 Node.js
 - 🎨 **图形化配置界面**：友好的 Web UI，支持可视化编辑配置
 - 🔐 **HTTP Basic Auth**：安全的认证机制
+- 🔑 **推送 Token 保护**：可选的 API Token 验证，防止接口滥用
 - 📊 **实时事件流**：SSE (Server-Sent Events) 支持
 - 💾 **可选 SQLite**：使用 `modernc.org/sqlite`（纯 Go，无 CGO）
 - 🐳 **Docker 支持**：一键部署，多架构支持
@@ -112,9 +113,15 @@ channel_groups:
 
 default_channel: all_channels
 
+# Web 界面认证
 auth:
   user: admin
   pass: yourpassword
+
+# 推送 API Token 保护（可选）
+push_token:
+  enabled: false  # 设置为 true 启用 token 验证
+  token: ""       # 留空则自动生成，或手动设置
 
 # 可选：SQLite 数据库
 sqlite:
@@ -132,7 +139,9 @@ sqlite:
 
 ## 🌐 API 接口
 
-### 推送接口（公开，无需认证）
+### 推送接口
+
+#### 不启用 Token 验证（默认）
 
 ```bash
 # GET 方式
@@ -146,12 +155,58 @@ curl -X POST http://localhost:8084/send \
 curl -X POST http://localhost:8084/send \
   -H "Content-Type: application/json" \
   -d '{"text":"Hello","desp":"World","chan":"telegram"}'
+```
 
-# Bark 兼容接口
+#### 启用 Token 验证后
+
+当在配置文件中设置 `push_token.enabled: true` 后，所有推送请求必须包含 token 参数（支持 query / 表单 / JSON）：
+
+```bash
+# GET 方式（带 token）
+curl "http://localhost:8084/send?token=YOUR_TOKEN&text=Hello&desp=World&chan=telegram"
+
+# POST 方式（表单，带 token）
+curl -X POST http://localhost:8084/send \
+  -d "token=YOUR_TOKEN&text=Hello&desp=World&chan=telegram"
+
+# POST 方式（JSON，token 在 URL）
+curl -X POST "http://localhost:8084/send?token=YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello","desp":"World","chan":"telegram"}'
+
+# POST 方式（JSON，token 在 JSON）
+curl -X POST http://localhost:8084/send \
+  -H "Content-Type: application/json" \
+  -d '{"token":"YOUR_TOKEN","text":"Hello","desp":"World","chan":"telegram"}'
+```
+
+#### Bark 兼容接口（GET 可带标题/内容）
+
+```
 curl "http://localhost:8084/bark/telegram/Hello/World"
 
-# Bark v2 接口
+# Bark POST（表单）
+curl -X POST http://localhost:8084/bark/telegram \
+  -d "title=Hello&body=World"
+
+# 启用 token 后
+curl "http://localhost:8084/bark/telegram/Hello/World?token=YOUR_TOKEN"
+
+# 启用 token 后（POST 表单）
+curl -X POST http://localhost:8084/bark/telegram \
+  -d "token=YOUR_TOKEN&title=Hello&body=World"
+```
+
+#### Bark v2 接口
+
+```bash
+# 不启用 token
 curl -X POST http://localhost:8084/barkv2 \
+  -H "Content-Type: application/json" \
+  -d '{"device_key":"telegram","title":"Hello","body":"World"}'
+
+# 启用 token 后
+curl -X POST "http://localhost:8084/barkv2?token=YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"device_key":"telegram","title":"Hello","body":"World"}'
 ```
@@ -183,9 +238,11 @@ curl http://localhost:8084/api/health
 
 ## 🔐 认证说明
 
+### Web 界面认证
+
 - **Web 界面**：需要 HTTP Basic Auth 认证
 - **配置接口**：需要 HTTP Basic Auth 认证
-- **推送接口**：公开，无需认证
+- **事件流**：需要 HTTP Basic Auth 认证
 - **健康检查**：公开，无需认证
 
 首次运行时，默认认证信息：
@@ -193,6 +250,74 @@ curl http://localhost:8084/api/health
 - 密码：`pushoo`
 
 **⚠️ 重要：请立即修改默认密码！**
+
+### 推送 API Token 保护
+
+推送接口默认是公开的，但可以通过配置启用 Token 验证来保护接口不被滥用。
+
+#### 启用 Token 验证
+
+编辑 `config.yaml`：
+
+```yaml
+push_token:
+  enabled: true   # 启用 token 验证
+  token: ""       # 留空则自动生成 64 位随机 token
+```
+
+或手动设置 token：
+
+```yaml
+push_token:
+  enabled: true
+  token: "your_custom_token_here"
+```
+
+#### Token 自动生成
+
+- 当 `enabled: true` 且 `token` 为空时，程序启动时会自动生成一个 64 位随机 token
+- Token 会自动保存到配置文件中
+- 只在首次启动或 token 为空时生成，不会覆盖已有 token
+
+#### 使用 Token
+
+启用后，所有推送请求必须包含 `token` 参数（支持 query / 表单 / JSON）：
+
+```bash
+# GET 请求
+curl "http://localhost:8084/send?token=YOUR_TOKEN&text=Hello&desp=World"
+
+# POST 请求（token 在 URL）
+curl -X POST "http://localhost:8084/send?token=YOUR_TOKEN" \
+  -d "text=Hello&desp=World"
+
+# POST 请求（token 在表单）
+curl -X POST http://localhost:8084/send \
+  -d "token=YOUR_TOKEN&text=Hello&desp=World"
+
+# POST 请求（token 在 JSON）
+curl -X POST http://localhost:8084/send \
+  -H "Content-Type: application/json" \
+  -d '{"token":"YOUR_TOKEN","text":"Hello","desp":"World"}'
+```
+
+#### Token 验证失败
+
+如果 token 错误或缺失，会返回 401 错误：
+
+```json
+{
+  "error": "Invalid or missing push token",
+  "msg": ["push token is required but not provided"]
+}
+```
+
+#### 安全建议
+
+1. **启用 Token 验证**：如果推送接口暴露在公网，强烈建议启用
+2. **定期更换 Token**：定期修改 token 值
+3. **使用 HTTPS**：配合反向代理使用 HTTPS
+4. **限制访问**：使用防火墙限制访问 IP
 
 详见 [认证说明文档](AUTHENTICATION.md)
 

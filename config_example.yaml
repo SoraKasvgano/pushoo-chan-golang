@@ -64,6 +64,13 @@ auth:
   user: admin
   pass: your_secure_password
 
+# Push API token protection (optional)
+# When enabled, all push requests must include the token parameter
+# Example: /send?token=YOUR_TOKEN&text=Hello&desp=World
+push_token:
+  enabled: false  # Set to true to enable token verification
+  token: ""       # Leave empty to auto-generate a 64-char random token, or set your own
+
 # SQLite database for storing push history (optional)
 # For Docker: use ./data/pushoo.db (will be saved in /app/data/pushoo.db)
 # For local: use ./data/pushoo.db or any absolute path

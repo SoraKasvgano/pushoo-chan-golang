@@ -57,6 +57,29 @@
           </div>
 
           <div class="config-section">
+            <h3>🔑 推送 API Token 保护</h3>
+            <div class="hint" style="margin-bottom: 12px;">
+              💡 启用后，所有推送请求必须包含 token 参数，防止接口被滥用
+            </div>
+            <div class="config-group">
+              <label class="field">
+                <div class="field__label">启用 Token 验证 (push_token.enabled)</div>
+                <select id="cfgPushTokenEnabled" class="input">
+                  <option value="false">关闭（默认）</option>
+                  <option value="true">启用</option>
+                </select>
+              </label>
+              <label class="field">
+                <div class="field__label">Token (push_token.token)</div>
+                <input id="cfgPushTokenToken" class="input" placeholder="留空自动生成" />
+              </label>
+            </div>
+            <div class="hint" style="margin-top: 8px;">
+              ℹ️ Token 为空时，程序启动会自动生成 64 位随机 token
+            </div>
+          </div>
+
+          <div class="config-section">
             <h3>⚙️ 其他设置</h3>
             <div class="config-group">
               <label class="field">
@@ -91,6 +114,12 @@
 
       <section class="card">
         <h2>📤 发送测试（/send）</h2>
+        <div id="tokenHint" class="hint" style="margin-bottom: 12px; display: none;">
+          🔑 Token 验证已启用，请求示例：<br>
+          <code style="background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; display: inline-block; margin-top: 4px;">
+            /send?token=YOUR_TOKEN&text=Hello&desp=World
+          </code>
+        </div>
         <div class="row">
           <label class="field">
             <div class="field__label">chan（逗号分隔，可空=默认）</div>
@@ -113,7 +142,7 @@
           <button id="sendPost" class="btn" aria-label="POST 发送">📮 POST 发送</button>
           <button id="sendGet" class="btn btn--ghost" aria-label="GET 发送">📨 GET 发送</button>
         </div>
-        <pre id="sendResp" class="pre" aria-live="polite"></pre>
+        <pre id="sendResp" class="pre pre--fixed" aria-live="polite"></pre>
       </section>
 
       <section class="card">
@@ -126,6 +155,257 @@
         <pre id="events" class="pre" aria-live="polite" aria-label="事件日志"></pre>
         <div class="hint">💡 预留双向交互：前端可订阅推送结果事件；后续也可扩展 webhook / websocket。</div>
       </section>
+
+      <section class="card card--full">
+        <h2>📚 API 使用示例</h2>
+        <div class="tabs">
+          <button id="tabCurl" class="tab tab--active" aria-label="cURL 示例">cURL</button>
+          <button id="tabPython" class="tab" aria-label="Python 示例">Python</button>
+          <button id="tabGo" class="tab" aria-label="Go 示例">Go</button>
+          <button id="tabJavaScript" class="tab" aria-label="JavaScript 示例">JavaScript</button>
+        </div>
+
+        <!-- cURL Examples -->
+        <div id="exampleCurl" class="example-panel">
+          <h3>GET 请求</h3>
+          <pre class="code-block" id="curlGet">curl "http://localhost:8084/send?text=Hello&desp=World&chan=telegram"</pre>
+
+          <h3>POST 请求（表单）</h3>
+          <pre class="code-block" id="curlPostForm">curl -X POST http://localhost:8084/send \
+  -d "text=Hello&desp=World&chan=telegram"</pre>
+
+          <h3>POST 请求（JSON）</h3>
+          <pre class="code-block" id="curlPostJson">curl -X POST http://localhost:8084/send \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Hello","desp":"World","chan":"telegram"}'</pre>
+
+          <h3>Bark GET（标题/内容）</h3>
+          <pre class="code-block" id="curlBarkGetTitleBody">curl "http://localhost:8084/bark/telegram/Hello/World"</pre>
+
+          <h3>Bark POST（表单）</h3>
+          <pre class="code-block" id="curlBarkPostForm">curl -X POST http://localhost:8084/bark/telegram \
+  -d "title=Hello&body=World"</pre>
+
+          <h3>Bark v2 接口</h3>
+          <pre class="code-block" id="curlBarkV2">curl -X POST http://localhost:8084/barkv2 \
+  -H "Content-Type: application/json" \
+  -d '{"device_key":"telegram","title":"Hello","body":"World"}'</pre>
+        </div>
+
+        <!-- Python Examples -->
+        <div id="examplePython" class="example-panel" style="display: none;">
+          <h3>使用 requests 库</h3>
+          <pre class="code-block" id="pythonExample">import requests
+
+# GET 请求
+response = requests.get('http://localhost:8084/send', params={
+    'text': 'Hello',
+    'desp': 'World',
+    'chan': 'telegram'
+})
+
+# POST 请求（表单）
+response = requests.post('http://localhost:8084/send', data={
+    'text': 'Hello',
+    'desp': 'World',
+    'chan': 'telegram'
+})
+
+# POST 请求（JSON）
+response = requests.post('http://localhost:8084/send', json={
+    'text': 'Hello',
+    'desp': 'World',
+    'chan': 'telegram'
+})
+
+# Bark GET（标题/内容）
+response = requests.get('http://localhost:8084/bark/telegram/Hello/World')
+
+# Bark POST（表单）
+response = requests.post('http://localhost:8084/bark/telegram', data={
+    'title': 'Hello',
+    'body': 'World'
+})
+
+# Bark v2 接口（JSON）
+response = requests.post('http://localhost:8084/barkv2', json={
+    'device_key': 'telegram',
+    'title': 'Hello',
+    'body': 'World'
+})
+
+print(response.json())</pre>
+        </div>
+
+        <!-- Go Examples -->
+        <div id="exampleGo" class="example-panel" style="display: none;">
+          <h3>使用 net/http</h3>
+          <pre class="code-block" id="goExample">package main
+
+import (
+  "bytes"
+  "encoding/json"
+  "fmt"
+  "io"
+  "net/http"
+  "net/url"
+)
+
+func main() {
+  // GET 请求
+  params := url.Values{}
+  params.Set("text", "Hello")
+  params.Set("desp", "World")
+  params.Set("chan", "telegram")
+
+  resp, err := http.Get("http://localhost:8084/send?" + params.Encode())
+  if err != nil {
+    panic(err)
+  }
+  body, _ := io.ReadAll(resp.Body)
+  _ = resp.Body.Close()
+  fmt.Println("GET status:", resp.Status, string(body))
+
+  // POST 请求（表单）
+  form := url.Values{}
+  form.Set("text", "Hello")
+  form.Set("desp", "World")
+  form.Set("chan", "telegram")
+  resp, err = http.Post("http://localhost:8084/send", "application/x-www-form-urlencoded", bytes.NewBufferString(form.Encode()))
+  if err != nil {
+    panic(err)
+  }
+  body, _ = io.ReadAll(resp.Body)
+  _ = resp.Body.Close()
+  fmt.Println("POST form status:", resp.Status, string(body))
+
+  // POST 请求（JSON）
+  body, _ = json.Marshal(map[string]string{
+    "text": "Hello",
+    "desp": "World",
+    "chan": "telegram",
+  })
+  resp, err = http.Post("http://localhost:8084/send", "application/json", bytes.NewReader(body))
+  if err != nil {
+    panic(err)
+  }
+  body, _ = io.ReadAll(resp.Body)
+  _ = resp.Body.Close()
+  fmt.Println("POST json status:", resp.Status, string(body))
+
+  // Bark GET（标题/内容）
+  resp, err = http.Get("http://localhost:8084/bark/telegram/Hello/World")
+  if err != nil {
+    panic(err)
+  }
+  body, _ = io.ReadAll(resp.Body)
+  _ = resp.Body.Close()
+  fmt.Println("Bark get title/body status:", resp.Status, string(body))
+
+  // Bark POST（表单）
+  barkForm := url.Values{}
+  barkForm.Set("title", "Hello")
+  barkForm.Set("body", "World")
+  resp, err = http.Post("http://localhost:8084/bark/telegram", "application/x-www-form-urlencoded", bytes.NewBufferString(barkForm.Encode()))
+  if err != nil {
+    panic(err)
+  }
+  body, _ = io.ReadAll(resp.Body)
+  _ = resp.Body.Close()
+  fmt.Println("Bark post form status:", resp.Status, string(body))
+
+  // Bark v2 接口（JSON）
+  barkBody, _ := json.Marshal(map[string]string{
+    "device_key": "telegram",
+    "title": "Hello",
+    "body": "World",
+  })
+  resp, err = http.Post("http://localhost:8084/barkv2", "application/json", bytes.NewReader(barkBody))
+  if err != nil {
+    panic(err)
+  }
+  body, _ = io.ReadAll(resp.Body)
+  _ = resp.Body.Close()
+  fmt.Println("Bark v2 status:", resp.Status, string(body))
+}</pre>
+        </div>
+
+        <!-- JavaScript Examples -->
+        <div id="exampleJavaScript" class="example-panel" style="display: none;">
+          <h3>使用 fetch API</h3>
+          <pre class="code-block" id="jsExample">// GET 请求
+const params = new URLSearchParams({
+  text: 'Hello',
+  desp: 'World',
+  chan: 'telegram'
+});
+fetch(`http://localhost:8084/send?${params}`)
+  .then(res => res.json())
+  .then(data => console.log(data));
+
+// POST 请求（表单）
+const form = new URLSearchParams({
+  text: 'Hello',
+  desp: 'World',
+  chan: 'telegram'
+});
+fetch('http://localhost:8084/send', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  body: form.toString()
+})
+  .then(res => res.json())
+  .then(data => console.log(data));
+
+// POST 请求（JSON）
+fetch('http://localhost:8084/send', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    text: 'Hello',
+    desp: 'World',
+    chan: 'telegram'
+  })
+})
+  .then(res => res.json())
+  .then(data => console.log(data));
+
+// Bark GET（标题/内容）
+fetch('http://localhost:8084/bark/telegram/Hello/World')
+  .then(res => res.json())
+  .then(data => console.log(data));
+
+// Bark POST（表单）
+const barkForm = new URLSearchParams({
+  title: 'Hello',
+  body: 'World'
+});
+fetch('http://localhost:8084/bark/telegram', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  body: barkForm.toString()
+})
+  .then(res => res.json())
+  .then(data => console.log(data));
+
+// Bark v2 接口（JSON）
+fetch('http://localhost:8084/barkv2', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    device_key: 'telegram',
+    title: 'Hello',
+    body: 'World'
+  })
+})
+  .then(res => res.json())
+  .then(data => console.log(data));</pre>
+        </div>
+
+        <div class="hint" id="tokenExampleHint" style="margin-top: 12px; display: none;">
+          💡 Token 验证已启用，所有请求需添加 <code>token</code> 参数
+        </div>
+      </section>
     </main>
 
     <footer class="foot">
@@ -136,4 +416,3 @@
     <script src="./app.js"></script>
   </body>
 </html>
-

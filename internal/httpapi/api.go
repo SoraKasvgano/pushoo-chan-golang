@@ -195,6 +195,78 @@ func (a *API) verifyBasicAuth(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// verifyPushToken verifies the push token if push_token.enabled is true
+func (a *API) verifyPushToken(r *http.Request) error {
+	cfg := a.opts.Config.Get()
+
+	// If push token is not enabled, allow access
+	if !cfg.PushToken.Enabled {
+		return nil
+	}
+
+	// Get token from query parameter or form data
+	token := r.URL.Query().Get("token")
+	if token == "" && r.Method == http.MethodPost {
+		// Try to get from form data
+		if err := r.ParseForm(); err == nil {
+			token = r.Form.Get("token")
+		}
+	}
+	if token == "" && r.Method == http.MethodPost {
+		// Try to get from JSON body (without consuming it)
+		if bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 2<<20)); err == nil {
+			// Restore body for downstream handlers
+			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+			if len(bodyBytes) > 0 {
+				mediaType, params, _ := mime.ParseMediaType(r.Header.Get("content-type"))
+				charset := params["charset"]
+				if charset == "" {
+					charset = ienc.ExtractCharsetFromBytes(bodyBytes)
+				}
+				if charset == "" {
+					charset = "utf-8"
+				}
+
+				if !isValidCharset(charset) {
+					charset = "utf-8"
+				}
+
+				trim := bytes.TrimSpace(bodyBytes)
+				if mediaType == "application/json" || (len(trim) > 0 && trim[0] == '{') {
+					utf8b, err := ienc.DecodeBytes(bodyBytes, charset)
+					if err != nil {
+						utf8b = bodyBytes
+					}
+					var m map[string]any
+					if err := json.Unmarshal(utf8b, &m); err == nil {
+						if v, ok := m["token"]; ok {
+							token = strings.TrimSpace(fmt.Sprint(v))
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Check if token is provided
+	if token == "" {
+		return fmt.Errorf("push token is required but not provided")
+	}
+
+	// Verify token using constant-time comparison to prevent timing attacks
+	expectedToken := strings.TrimSpace(cfg.PushToken.Token)
+	if expectedToken == "" {
+		return fmt.Errorf("push token is enabled but not configured")
+	}
+
+	if subtle.ConstantTimeCompare([]byte(token), []byte(expectedToken)) != 1 {
+		return fmt.Errorf("invalid push token")
+	}
+
+	return nil
+}
+
 type reqContext struct {
 	logs []string
 }
@@ -224,6 +296,19 @@ func isValidCharset(charset string) bool {
 
 func (a *API) handleSend(w http.ResponseWriter, r *http.Request) {
 	rc := &reqContext{}
+
+	// Verify push token if enabled
+	if err := a.verifyPushToken(r); err != nil {
+		w.Header().Set("content-type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error": "Invalid or missing push token",
+			"msg":   []string{err.Error()},
+		})
+		log.Printf("[push] Token verification failed from %s: %v", r.RemoteAddr, err)
+		return
+	}
+
 	title, content, chanStr, charset, hasTitle, hasContent := parseCommonParams(rc, r)
 
 	// Match TS behavior: if desp/content is absent, send title only as content.
@@ -298,6 +383,20 @@ func (a *API) handleSend(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleBark(w http.ResponseWriter, r *http.Request) {
 	rc := &reqContext{}
+
+	// Verify push token if enabled
+	if err := a.verifyPushToken(r); err != nil {
+		w.Header().Set("content-type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]any{
+			"code":    401,
+			"message": "Invalid or missing push token",
+			"msg":     []string{err.Error()},
+		})
+		log.Printf("[push] Token verification failed from %s: %v", r.RemoteAddr, err)
+		return
+	}
+
 	// Bark URL format: /bark/{chan}/{content} or /bark/{chan}/{title}/{content}
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	// parts[0] == "bark"
@@ -355,6 +454,20 @@ func (a *API) handleBark(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleBarkV2(w http.ResponseWriter, r *http.Request) {
 	rc := &reqContext{}
+
+	// Verify push token if enabled
+	if err := a.verifyPushToken(r); err != nil {
+		w.Header().Set("content-type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]any{
+			"code":    401,
+			"message": "Invalid or missing push token",
+			"msg":     []string{err.Error()},
+		})
+		log.Printf("[push] Token verification failed from %s: %v", r.RemoteAddr, err)
+		return
+	}
+
 	bodyMap, charset := parseBody(rc, r)
 	chanName := bodyMap["device_key"]
 	title := bodyMap["title"]

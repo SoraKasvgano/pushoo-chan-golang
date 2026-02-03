@@ -9,6 +9,7 @@
     channels: [],
     channel_groups: [],
     default_channel: "",
+    push_token: { enabled: false, token: "" },
     sqlite: { path: "" }
   };
 
@@ -80,6 +81,7 @@
         channels: [],
         channel_groups: [],
         default_channel: "",
+        push_token: { enabled: false, token: "" },
         sqlite: { path: "" }
       };
 
@@ -104,12 +106,16 @@
           currentSection = 'auth';
           continue;
         }
+        if (line.startsWith('push_token:')) {
+          currentSection = 'push_token';
+          continue;
+        }
         if (line.startsWith('sqlite:')) {
           currentSection = 'sqlite';
           continue;
         }
         if (line.startsWith('default_channel:')) {
-          configData.default_channel = trimmed.split(':')[1].trim();
+          configData.default_channel = trimmed.split(':')[1].split('#')[0].trim();
           continue;
         }
 
@@ -117,30 +123,40 @@
         if (currentSection === 'channels') {
           if (line.match(/^\s+- name:/)) {
             if (currentChannel) configData.channels.push(currentChannel);
-            currentChannel = { name: trimmed.split(':')[1].trim(), type: "", token: "" };
+            currentChannel = { name: trimmed.split(':')[1].split('#')[0].trim(), type: "", token: "" };
           } else if (currentChannel && line.match(/^\s+type:/)) {
-            currentChannel.type = trimmed.split(':')[1].trim();
+            currentChannel.type = trimmed.split(':')[1].split('#')[0].trim();
           } else if (currentChannel && line.match(/^\s+token:/)) {
-            currentChannel.token = trimmed.split(':').slice(1).join(':').trim().replace(/^["']|["']$/g, '');
+            const tokenPart = trimmed.split(':').slice(1).join(':').split('#')[0].trim().replace(/^["']|["']$/g, '');
+            currentChannel.token = tokenPart;
           }
         } else if (currentSection === 'channel_groups') {
           if (line.match(/^\s+- name:/)) {
             if (currentGroup) configData.channel_groups.push(currentGroup);
-            currentGroup = { name: trimmed.split(':')[1].trim(), use: [] };
+            currentGroup = { name: trimmed.split(':')[1].split('#')[0].trim(), use: [] };
           } else if (currentGroup && line.match(/^\s+use:/)) {
             continue;
           } else if (currentGroup && line.match(/^\s+- /)) {
-            currentGroup.use.push(trimmed.substring(2).trim());
+            const channelName = trimmed.substring(2).split('#')[0].trim();
+            currentGroup.use.push(channelName);
           }
         } else if (currentSection === 'auth') {
           if (line.match(/^\s+user:/)) {
-            configData.auth.user = trimmed.split(':')[1].trim();
+            configData.auth.user = trimmed.split(':')[1].split('#')[0].trim();
           } else if (line.match(/^\s+pass:/)) {
-            configData.auth.pass = trimmed.split(':')[1].trim();
+            configData.auth.pass = trimmed.split(':')[1].split('#')[0].trim();
+          }
+        } else if (currentSection === 'push_token') {
+          if (line.match(/^\s+enabled:/)) {
+            const val = trimmed.split(':')[1].split('#')[0].trim().toLowerCase();
+            configData.push_token.enabled = val === 'true';
+          } else if (line.match(/^\s+token:/)) {
+            const tokenVal = trimmed.split(':')[1].split('#')[0].trim().replace(/^["']|["']$/g, '');
+            configData.push_token.token = tokenVal;
           }
         } else if (currentSection === 'sqlite') {
           if (line.match(/^\s+path:/)) {
-            configData.sqlite.path = trimmed.split(':')[1].trim();
+            configData.sqlite.path = trimmed.split(':')[1].split('#')[0].trim();
           }
         }
       }
@@ -162,6 +178,22 @@
     $("cfgAuthPass").value = configData.auth.pass || "";
     $("cfgDefaultChannel").value = configData.default_channel || "";
     $("cfgSqlitePath").value = configData.sqlite?.path || "";
+
+    // Render push_token
+    $("cfgPushTokenEnabled").value = configData.push_token?.enabled ? "true" : "false";
+    $("cfgPushTokenToken").value = configData.push_token?.token || "";
+
+    // Show/hide token hint in send test section
+    const tokenHint = $("tokenHint");
+    if (configData.push_token?.enabled && configData.push_token?.token) {
+      tokenHint.style.display = "block";
+      tokenHint.innerHTML = `🔑 Token 验证已启用，请求示例：<br>
+        <code style="background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; display: inline-block; margin-top: 4px;">
+          /send?token=${configData.push_token.token}&text=Hello&desp=World
+        </code>`;
+    } else {
+      tokenHint.style.display = "none";
+    }
 
     // Render channels
     const channelsList = $("channelsList");
@@ -237,6 +269,8 @@
       `;
       groupsList.appendChild(groupEl);
     });
+
+    updateApiExamples();
   }
 
   // Global functions for inline event handlers
@@ -294,6 +328,8 @@
     configData.auth.user = $("cfgAuthUser").value.trim();
     configData.auth.pass = $("cfgAuthPass").value.trim();
     configData.default_channel = $("cfgDefaultChannel").value.trim();
+    configData.push_token.enabled = $("cfgPushTokenEnabled").value === "true";
+    configData.push_token.token = $("cfgPushTokenToken").value.trim();
     configData.sqlite.path = $("cfgSqlitePath").value.trim();
 
     let yaml = "channels:\n";
@@ -323,6 +359,10 @@
     yaml += "\nauth:\n";
     yaml += `  user: ${configData.auth.user || 'admin'}\n`;
     yaml += `  pass: ${configData.auth.pass || 'yourpassword'}\n`;
+
+    yaml += "\npush_token:\n";
+    yaml += `  enabled: ${configData.push_token.enabled}\n`;
+    yaml += `  token: ${configData.push_token.token || ''}\n`;
 
     if (configData.sqlite.path) {
       yaml += "\nsqlite:\n";
@@ -427,6 +467,286 @@
     out.textContent += "disconnected\n";
   }
 
+  // Update API examples with token
+  function updateApiExamples() {
+    const tokenEnabled = configData.push_token?.enabled;
+    const token = configData.push_token?.token || "YOUR_TOKEN";
+    const tokenParam = tokenEnabled ? `token=${token}&` : "";
+    const tokenParamOnly = tokenEnabled ? `?token=${token}` : "";
+
+    // Update cURL examples (token is accepted in query or form, not JSON body)
+    $("curlGet").textContent = `curl "http://localhost:8084/send?${tokenParam}text=Hello&desp=World&chan=telegram"`;
+    $("curlPostForm").textContent = `curl -X POST http://localhost:8084/send \\
+  -d "${tokenParam}text=Hello&desp=World&chan=telegram"`;
+    $("curlPostJson").textContent = `curl -X POST "http://localhost:8084/send${tokenParamOnly}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"text":"Hello","desp":"World","chan":"telegram"}'`;
+    $("curlBarkGetTitleBody").textContent = `curl "http://localhost:8084/bark/telegram/Hello/World${tokenParamOnly}"`;
+    $("curlBarkPostForm").textContent = `curl -X POST http://localhost:8084/bark/telegram \\
+  -d "${tokenEnabled ? `token=${token}&` : ""}title=Hello&body=World"`;
+    $("curlBarkV2").textContent = `curl -X POST "http://localhost:8084/barkv2${tokenParamOnly}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"device_key":"telegram","title":"Hello","body":"World"}'`;
+
+    // Update Python example (token must be in query or form for POST)
+    const pythonTokenLine = tokenEnabled ? `    'token': '${token}',\n` : "";
+    const pythonPostUrl = tokenEnabled ? `http://localhost:8084/send?token=${token}` : "http://localhost:8084/send";
+    const pythonBarkTitleBodyUrl = tokenEnabled ? `http://localhost:8084/bark/telegram/Hello/World?token=${token}` : "http://localhost:8084/bark/telegram/Hello/World";
+    const pythonBarkPostFormUrl = "http://localhost:8084/bark/telegram";
+    const pythonBarkV2Url = tokenEnabled ? `http://localhost:8084/barkv2?token=${token}` : "http://localhost:8084/barkv2";
+    $("pythonExample").textContent = `import requests
+
+# GET 请求
+response = requests.get('http://localhost:8084/send', params={
+${pythonTokenLine}    'text': 'Hello',
+    'desp': 'World',
+    'chan': 'telegram'
+})
+
+# POST 请求（表单）
+response = requests.post('http://localhost:8084/send', data={
+${pythonTokenLine}    'text': 'Hello',
+    'desp': 'World',
+    'chan': 'telegram'
+})
+
+# POST 请求（JSON）
+response = requests.post('${pythonPostUrl}', json={
+    'text': 'Hello',
+    'desp': 'World',
+    'chan': 'telegram'
+})
+
+# Bark GET（标题/内容）
+response = requests.get('${pythonBarkTitleBodyUrl}')
+
+# Bark POST（表单）
+response = requests.post('${pythonBarkPostFormUrl}', data={
+${pythonTokenLine}    'title': 'Hello',
+    'body': 'World'
+})
+
+# Bark v2 接口（JSON）
+response = requests.post('${pythonBarkV2Url}', json={
+    'device_key': 'telegram',
+    'title': 'Hello',
+    'body': 'World'
+})
+
+print(response.json())`;
+
+    // Update Go example
+    const goTokenParamLine = tokenEnabled ? `  params.Set("token", "${token}")\n` : "";
+    const goTokenFormLine = tokenEnabled ? `  form.Set("token", "${token}")\n` : "";
+    const goTokenBarkFormLine = tokenEnabled ? `  barkForm.Set("token", "${token}")\n` : "";
+    $("goExample").textContent = `package main
+
+import (
+  "bytes"
+  "encoding/json"
+  "fmt"
+  "io"
+  "net/http"
+  "net/url"
+)
+
+func main() {
+  // GET 请求
+  params := url.Values{}
+${goTokenParamLine}  params.Set("text", "Hello")
+  params.Set("desp", "World")
+  params.Set("chan", "telegram")
+
+  resp, err := http.Get("http://localhost:8084/send?" + params.Encode())
+  if err != nil {
+    panic(err)
+  }
+  body, _ := io.ReadAll(resp.Body)
+  _ = resp.Body.Close()
+  fmt.Println("GET status:", resp.Status, string(body))
+
+  // POST 请求（表单）
+  form := url.Values{}
+${goTokenFormLine}  form.Set("text", "Hello")
+  form.Set("desp", "World")
+  form.Set("chan", "telegram")
+  resp, err = http.Post("http://localhost:8084/send", "application/x-www-form-urlencoded", bytes.NewBufferString(form.Encode()))
+  if err != nil {
+    panic(err)
+  }
+  body, _ = io.ReadAll(resp.Body)
+  _ = resp.Body.Close()
+  fmt.Println("POST form status:", resp.Status, string(body))
+
+  // POST 请求（JSON）
+  body, _ = json.Marshal(map[string]string{
+    "text": "Hello",
+    "desp": "World",
+    "chan": "telegram",
+  })
+  resp, err = http.Post("http://localhost:8084/send${tokenParamOnly}", "application/json", bytes.NewReader(body))
+  if err != nil {
+    panic(err)
+  }
+  body, _ = io.ReadAll(resp.Body)
+  _ = resp.Body.Close()
+  fmt.Println("POST json status:", resp.Status, string(body))
+
+  // Bark GET（标题/内容）
+  resp, err = http.Get("http://localhost:8084/bark/telegram/Hello/World${tokenParamOnly}")
+  if err != nil {
+    panic(err)
+  }
+  body, _ = io.ReadAll(resp.Body)
+  _ = resp.Body.Close()
+  fmt.Println("Bark get title/body status:", resp.Status, string(body))
+
+  // Bark POST（表单）
+  barkForm := url.Values{}
+${goTokenBarkFormLine}  barkForm.Set("title", "Hello")
+  barkForm.Set("body", "World")
+  resp, err = http.Post("http://localhost:8084/bark/telegram", "application/x-www-form-urlencoded", bytes.NewBufferString(barkForm.Encode()))
+  if err != nil {
+    panic(err)
+  }
+  body, _ = io.ReadAll(resp.Body)
+  _ = resp.Body.Close()
+  fmt.Println("Bark post form status:", resp.Status, string(body))
+
+  // Bark v2 接口（JSON）
+  barkBody, _ := json.Marshal(map[string]string{
+    "device_key": "telegram",
+    "title": "Hello",
+    "body": "World",
+  })
+  resp, err = http.Post("http://localhost:8084/barkv2${tokenParamOnly}", "application/json", bytes.NewReader(barkBody))
+  if err != nil {
+    panic(err)
+  }
+  body, _ = io.ReadAll(resp.Body)
+  _ = resp.Body.Close()
+  fmt.Println("Bark v2 status:", resp.Status, string(body))
+}`;
+
+    // Update JavaScript example (token must be in query or form for POST)
+    const jsTokenLine = tokenEnabled ? `  token: '${token}',\n` : "";
+    const jsBarkTitleBodyUrl = tokenEnabled ? `http://localhost:8084/bark/telegram/Hello/World?token=${token}` : "http://localhost:8084/bark/telegram/Hello/World";
+    const jsBarkPostFormUrl = "http://localhost:8084/bark/telegram";
+    const jsBarkV2Url = tokenEnabled ? `http://localhost:8084/barkv2?token=${token}` : "http://localhost:8084/barkv2";
+    $("jsExample").textContent = `// GET 请求
+const params = new URLSearchParams({
+${jsTokenLine}  text: 'Hello',
+  desp: 'World',
+  chan: 'telegram'
+});
+fetch(\`http://localhost:8084/send?\${params}\`)
+  .then(res => res.json())
+  .then(data => console.log(data));
+
+// POST 请求（表单）
+const form = new URLSearchParams({
+${jsTokenLine}  text: 'Hello',
+  desp: 'World',
+  chan: 'telegram'
+});
+fetch('http://localhost:8084/send', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  body: form.toString()
+})
+  .then(res => res.json())
+  .then(data => console.log(data));
+
+// POST 请求（JSON）
+fetch('http://localhost:8084/send${tokenParamOnly}', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    text: 'Hello',
+    desp: 'World',
+    chan: 'telegram'
+  })
+})
+  .then(res => res.json())
+  .then(data => console.log(data));
+
+// Bark GET（标题/内容）
+fetch('${jsBarkTitleBodyUrl}')
+  .then(res => res.json())
+  .then(data => console.log(data));
+
+// Bark POST（表单）
+const barkForm = new URLSearchParams({
+${jsTokenLine}  title: 'Hello',
+  body: 'World'
+});
+fetch('${jsBarkPostFormUrl}', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  body: barkForm.toString()
+})
+  .then(res => res.json())
+  .then(data => console.log(data));
+
+// Bark v2 接口（JSON）
+fetch('${jsBarkV2Url}', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    device_key: 'telegram',
+    title: 'Hello',
+    body: 'World'
+  })
+})
+  .then(res => res.json())
+  .then(data => console.log(data));`;
+
+    // Show/hide token hint
+    const tokenExampleHint = $("tokenExampleHint");
+    if (tokenEnabled) {
+      tokenExampleHint.style.display = "block";
+    } else {
+      tokenExampleHint.style.display = "none";
+    }
+  }
+
+  // Example tab switching
+  function switchExampleTab(tab) {
+    const tabCurl = $("tabCurl");
+    const tabPython = $("tabPython");
+    const tabGo = $("tabGo");
+    const tabJavaScript = $("tabJavaScript");
+    const panelCurl = $("exampleCurl");
+    const panelPython = $("examplePython");
+    const panelGo = $("exampleGo");
+    const panelJavaScript = $("exampleJavaScript");
+
+    // Remove all active states
+    tabCurl.classList.remove('tab--active');
+    tabPython.classList.remove('tab--active');
+    tabGo.classList.remove('tab--active');
+    tabJavaScript.classList.remove('tab--active');
+    panelCurl.style.display = 'none';
+    panelPython.style.display = 'none';
+    panelGo.style.display = 'none';
+    panelJavaScript.style.display = 'none';
+
+    // Activate selected tab
+    if (tab === 'curl') {
+      tabCurl.classList.add('tab--active');
+      panelCurl.style.display = 'block';
+    } else if (tab === 'python') {
+      tabPython.classList.add('tab--active');
+      panelPython.style.display = 'block';
+    } else if (tab === 'go') {
+      tabGo.classList.add('tab--active');
+      panelGo.style.display = 'block';
+    } else if (tab === 'javascript') {
+      tabJavaScript.classList.add('tab--active');
+      panelJavaScript.style.display = 'block';
+    }
+  }
+
   // Event listeners
   $("beautify").addEventListener("click", beautifyYAML);
   $("sendPost").addEventListener("click", () => send("POST"));
@@ -447,6 +767,14 @@
   $("saveYaml").addEventListener("click", () => uploadConfig().catch((e) => setMsg(cfgMsg, String(e), true)));
   $("reloadYaml").addEventListener("click", () => downloadConfig().catch((e) => setMsg(cfgMsg, String(e), true)));
 
+  // Example tab event listeners
+  $("tabCurl").addEventListener("click", () => switchExampleTab('curl'));
+  $("tabPython").addEventListener("click", () => switchExampleTab('python'));
+  $("tabGo").addEventListener("click", () => switchExampleTab('go'));
+  $("tabJavaScript").addEventListener("click", () => switchExampleTab('javascript'));
+
   // Initialize - Auto-load config on page load
-  downloadConfig().catch((e) => console.error('Failed to auto-load config:', e));
+  downloadConfig().then(() => {
+    updateApiExamples();
+  }).catch((e) => console.error('Failed to auto-load config:', e));
 })();
