@@ -9,7 +9,8 @@
 - 🔐 **HTTP Basic Auth**：安全的认证机制
 - 🔑 **推送 Token 保护**：可选的 API Token 验证，防止接口滥用
 - 📊 **实时事件流**：SSE (Server-Sent Events) 支持
-- 💾 **可选 SQLite**：使用 `modernc.org/sqlite`（纯 Go，无 CGO）
+- 💾 **可选 SQLite**：使用 `modernc.org/sqlite`（纯 Go，无 CGO），支持维护与分页查询
+- 🛡️ **反暴力破解**：内存 IP 封禁池 + 分片锁 + 自动清理
 - 🐳 **Docker 支持**：一键部署，多架构支持
 - 🌍 **多平台编译**：支持 Linux/Windows/ARM
 
@@ -126,6 +127,19 @@ push_token:
 # 可选：SQLite 数据库
 sqlite:
   path: ./data/pushoo.db
+  cleanup_days: 30
+  cleanup_interval_hours: 24
+  record_channel_messages: false
+
+# 反暴力破解（内存 IP 封禁）
+security:
+  auth_fail_limit: 5
+  auth_ban_minutes: 10
+  token_fail_limit: 10
+  token_ban_minutes: 10
+  ip_ban_max_entries: 10000
+  ip_ban_cleanup_seconds: 60
+  ip_ban_idle_minutes: 60
 ```
 
 ### 图形化配置
@@ -236,6 +250,29 @@ curl -u admin:yourpassword http://localhost:8084/api/events
 curl http://localhost:8084/api/health
 ```
 
+### 安全统计与趋势（需要认证，SQLite 启用后趋势可用）
+
+```bash
+# IP 封禁池统计
+curl -u admin:yourpassword http://localhost:8084/api/security/ban_stats
+
+# IP 封禁趋势（最近 24h / 7d）
+curl -u admin:yourpassword http://localhost:8084/api/security/ban_trends
+```
+
+### SQLite 维护与分页（需要认证）
+
+```bash
+# 清理数据库（保留最近 N 天）
+curl -u admin:yourpassword -X POST "http://localhost:8084/api/store/cleanup?keep_days=30"
+
+# 压缩数据库体积
+curl -u admin:yourpassword -X POST http://localhost:8084/api/store/compact
+
+# 通知记录分页（默认 10 条/页）
+curl -u admin:yourpassword "http://localhost:8084/api/store/notifications?page=1&page_size=10"
+```
+
 ## 🔐 认证说明
 
 ### Web 界面认证
@@ -330,6 +367,9 @@ curl -X POST http://localhost:8084/send \
 ```yaml
 sqlite:
   path: ./data/pushoo.db
+  cleanup_days: 30
+  cleanup_interval_hours: 24
+  record_channel_messages: false
 ```
 
 **方式二：命令行参数**
@@ -344,6 +384,9 @@ sqlite:
 - ✅ 外键约束：防止孤儿数据
 - ✅ 事务写入：保证数据一致性
 - ✅ 自动创建：首次运行自动初始化数据库
+- ✅ 自动清理：按配置定期清理历史数据
+- ✅ 维护接口：支持手动清理与压缩
+- ✅ 记录开关：可选择是否保存通道级别的通知内容
 
 ### 数据表结构
 
@@ -370,6 +413,32 @@ CREATE TABLE deliveries (
   status TEXT,
   detail TEXT,
   FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+);
+
+-- IP 封禁池持久化（可选）
+CREATE TABLE ip_bans (
+  kind TEXT NOT NULL,
+  ip TEXT NOT NULL,
+  fail_count INTEGER NOT NULL,
+  banned_until INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY(kind, ip)
+);
+
+-- 通道级通知记录（可选，受 record_channel_messages 控制）
+CREATE TABLE channel_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  remote_addr TEXT,
+  channel_name TEXT,
+  channel_type TEXT,
+  title TEXT,
+  content TEXT,
+  status TEXT,
+  detail TEXT,
+  FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
 );
 ```
 
@@ -445,7 +514,8 @@ docker-compose logs -f
   - 🔐 认证设置
   - 📢 通道配置（支持 8 种通道类型）
   - 👥 通道组配置
-  - ⚙️ 其他设置（默认通道、SQLite 路径）
+  - ⚙️ 其他设置（默认通道、SQLite 路径、自动清理、记录开关）
+  - 🛡️ 反暴力破解配置（IP 封禁池参数）
 
 - **YAML 编辑**
   - 直接编辑 YAML 文本
@@ -464,6 +534,16 @@ docker-compose logs -f
 - 实时查看推送结果
 - SSE 连接状态
 - 事件日志
+
+### 安全统计与趋势
+
+- IP 封禁池统计（容量、样本 IP、估算内存）
+- 最近 24h / 7d 趋势图（SQLite 启用后可用）
+
+### 通知记录（SQLite）
+
+- 分页查看通道级通知记录（默认 10 条/页）
+- 仅 SQLite 启用时显示
 
 ## 🔧 命令行参数
 

@@ -22,13 +22,17 @@ type Config struct {
 	DefaultChannel string               `yaml:"default_channel,omitempty"`
 	Auth           AuthConfig           `yaml:"auth,omitempty"`
 	PushToken      PushTokenConfig      `yaml:"push_token,omitempty"`
+	Security       SecurityConfig       `yaml:"security,omitempty"`
 
 	// Optional extensions (ignored by older configs):
 	SQLite SQLiteConfig `yaml:"sqlite,omitempty"`
 }
 
 type SQLiteConfig struct {
-	Path string `yaml:"path,omitempty"`
+	Path                  string `yaml:"path,omitempty"`
+	CleanupDays           int    `yaml:"cleanup_days,omitempty"`
+	CleanupIntervalHours  int    `yaml:"cleanup_interval_hours,omitempty"`
+	RecordChannelMessages bool   `yaml:"record_channel_messages,omitempty"`
 }
 
 type AuthConfig struct {
@@ -39,6 +43,16 @@ type AuthConfig struct {
 type PushTokenConfig struct {
 	Enabled bool   `yaml:"enabled,omitempty"`
 	Token   string `yaml:"token,omitempty"`
+}
+
+type SecurityConfig struct {
+	AuthFailLimit       int `yaml:"auth_fail_limit,omitempty"`
+	AuthBanMinutes      int `yaml:"auth_ban_minutes,omitempty"`
+	TokenFailLimit      int `yaml:"token_fail_limit,omitempty"`
+	TokenBanMinutes     int `yaml:"token_ban_minutes,omitempty"`
+	IPBanMaxEntries     int `yaml:"ip_ban_max_entries,omitempty"`
+	IPBanCleanupSeconds int `yaml:"ip_ban_cleanup_seconds,omitempty"`
+	IPBanIdleMinutes    int `yaml:"ip_ban_idle_minutes,omitempty"`
 }
 
 type ChannelConfig struct {
@@ -105,9 +119,29 @@ push_token:
   enabled: false  # Set to true to enable token verification
   token: ""       # Will be auto-generated on first run if empty
 
+# Brute-force protection (in-memory IP ban)
+# auth_fail_limit: wrong password attempts before ban
+# auth_ban_minutes: ban duration for auth failures
+# token_fail_limit: wrong push token attempts before ban
+# token_ban_minutes: ban duration for token failures
+# ip_ban_max_entries: max IP entries kept in memory (0 = unlimited)
+# ip_ban_cleanup_seconds: cleanup interval for expired/idle entries
+# ip_ban_idle_minutes: remove IP entries idle for this long
+security:
+  auth_fail_limit: 5
+  auth_ban_minutes: 10
+  token_fail_limit: 10
+  token_ban_minutes: 10
+  ip_ban_max_entries: 10000
+  ip_ban_cleanup_seconds: 60
+  ip_ban_idle_minutes: 60
+
 # SQLite database for storing push history (optional)
 # sqlite:
 #   path: ./data/pushoo.db
+#   cleanup_days: 30
+#   cleanup_interval_hours: 24
+#   record_channel_messages: false
 `
 
 type Manager struct {
@@ -297,7 +331,6 @@ func (m *Manager) checkAndReload() {
 		}
 	}
 }
-
 
 // generateRandomToken generates a random token for push API authentication
 func generateRandomToken() string {

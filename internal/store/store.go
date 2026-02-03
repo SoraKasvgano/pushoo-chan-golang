@@ -30,3 +30,64 @@ type Store interface {
 	Close() error
 }
 
+type BanRecord struct {
+	Kind        string
+	IP          string
+	FailCount   int
+	BannedUntil time.Time
+	LastSeen    time.Time
+}
+
+type CleanupResult struct {
+	MessagesDeleted int64
+	BansDeleted     int64
+	Before          time.Time
+}
+
+type NotificationRecord struct {
+	ID          int64     `json:"id"`
+	CreatedAt   time.Time `json:"created_at"`
+	RemoteAddr  string    `json:"remote_addr"`
+	ChannelName string    `json:"channel_name"`
+	ChannelType string    `json:"channel_type"`
+	Title       string    `json:"title"`
+	Content     string    `json:"content"`
+	Status      string    `json:"status"`
+	Detail      string    `json:"detail"`
+}
+
+type NotificationPage struct {
+	Items    []NotificationRecord `json:"items"`
+	Page     int                  `json:"page"`
+	PageSize int                  `json:"page_size"`
+	Total    int                  `json:"total"`
+}
+
+type TrendPoint struct {
+	Label string `json:"label"`
+	Count int    `json:"count"`
+}
+
+type BanTrendStats struct {
+	Last24h []TrendPoint `json:"last_24h"`
+	Last7d  []TrendPoint `json:"last_7d"`
+}
+
+type BanStore interface {
+	UpsertBan(ctx context.Context, rec BanRecord) error
+	DeleteBan(ctx context.Context, kind, ip string) error
+	CleanupBans(ctx context.Context, before time.Time) (int64, error)
+}
+
+type MaintenanceStore interface {
+	Compact(ctx context.Context) error
+	Cleanup(ctx context.Context, before time.Time) (CleanupResult, error)
+}
+
+type BanTrendStore interface {
+	BanTrends(ctx context.Context) (BanTrendStats, error)
+}
+
+type NotificationStore interface {
+	ListChannelMessages(ctx context.Context, page, pageSize int) (NotificationPage, error)
+}

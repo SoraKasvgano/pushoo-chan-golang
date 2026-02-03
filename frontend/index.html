@@ -24,7 +24,7 @@
       <section class="card card--full">
         <h2>⚙️ 配置管理</h2>
         <div class="tabs">
-          <button id="tabGraphical" class="tab tab--active" aria-label="图形化配置">📊 图形化配置</button>
+          <button id="tabGraphical" class="tab tab--active" aria-label="图形化配置">🧩 图形化配置</button>
           <button id="tabYaml" class="tab" aria-label="YAML 编辑">📝 YAML 编辑</button>
         </div>
 
@@ -45,7 +45,7 @@
           </div>
 
           <div class="config-section">
-            <h3>📢 通道配置</h3>
+            <h3>📤 通道配置</h3>
             <div id="channelsList" class="channels-list"></div>
             <button id="addChannel" class="btn btn--ghost btn--small">➕ 添加通道</button>
           </div>
@@ -57,9 +57,9 @@
           </div>
 
           <div class="config-section">
-            <h3>🔑 推送 API Token 保护</h3>
+            <h3>🧾 推送 API Token 保护</h3>
             <div class="hint" style="margin-bottom: 12px;">
-              💡 启用后，所有推送请求必须包含 token 参数，防止接口被滥用
+              启用后，所有推送请求必须包含 token 参数，防止接口被滥用
             </div>
             <div class="config-group">
               <label class="field">
@@ -75,7 +75,50 @@
               </label>
             </div>
             <div class="hint" style="margin-top: 8px;">
-              ℹ️ Token 为空时，程序启动会自动生成 64 位随机 token
+              说明：Token 为空时，程序启动会自动生成 64 位随机 token
+            </div>
+          </div>
+
+          <div class="config-section">
+            <h3>🛡️ 反暴力破解（IP 临时封禁）</h3>
+            <div class="hint" style="margin-bottom: 12px;">
+              连续失败达到阈值后，临时封禁 IP（仅内存，不写入磁盘）
+            </div>
+            <div class="config-group">
+              <label class="field">
+                <div class="field__label">登录错误次数阈值 (security.auth_fail_limit)</div>
+                <input id="cfgAuthFailLimit" class="input" placeholder="5" />
+              </label>
+              <label class="field">
+                <div class="field__label">登录封禁分钟数 (security.auth_ban_minutes)</div>
+                <input id="cfgAuthBanMinutes" class="input" placeholder="10" />
+              </label>
+            </div>
+            <div class="config-group">
+              <label class="field">
+                <div class="field__label">Token 错误次数阈值 (security.token_fail_limit)</div>
+                <input id="cfgTokenFailLimit" class="input" placeholder="10" />
+              </label>
+              <label class="field">
+                <div class="field__label">Token 封禁分钟数 (security.token_ban_minutes)</div>
+                <input id="cfgTokenBanMinutes" class="input" placeholder="10" />
+              </label>
+            </div>
+            <div class="config-group">
+              <label class="field">
+                <div class="field__label">封禁池最大 IP 数 (security.ip_ban_max_entries)</div>
+                <input id="cfgIPBanMaxEntries" class="input" placeholder="10000" />
+              </label>
+              <label class="field">
+                <div class="field__label">清理间隔秒数 (security.ip_ban_cleanup_seconds)</div>
+                <input id="cfgIPBanCleanupSeconds" class="input" placeholder="60" />
+              </label>
+            </div>
+            <div class="config-group">
+              <label class="field">
+                <div class="field__label">空闲清理分钟数 (security.ip_ban_idle_minutes)</div>
+                <input id="cfgIPBanIdleMinutes" class="input" placeholder="60" />
+              </label>
             </div>
           </div>
 
@@ -89,6 +132,25 @@
               <label class="field">
                 <div class="field__label">SQLite 路径 (sqlite.path) - 可选</div>
                 <input id="cfgSqlitePath" class="input" placeholder="./data/pushoo.db" />
+              </label>
+            </div>
+            <div class="config-group">
+              <label class="field">
+                <div class="field__label">SQLite 自动清理保留天数 (sqlite.cleanup_days)</div>
+                <input id="cfgSqliteCleanupDays" class="input" placeholder="30" />
+              </label>
+              <label class="field">
+                <div class="field__label">SQLite 自动清理间隔小时 (sqlite.cleanup_interval_hours)</div>
+                <input id="cfgSqliteCleanupHours" class="input" placeholder="24" />
+              </label>
+            </div>
+            <div class="config-group">
+              <label class="field">
+                <div class="field__label">记录通道消息详情 (sqlite.record_channel_messages)</div>
+                <select id="cfgSqliteRecordMessages" class="input">
+                  <option value="true">开启</option>
+                  <option value="false">关闭</option>
+                </select>
               </label>
             </div>
           </div>
@@ -105,7 +167,7 @@
           <div class="row">
             <button id="saveYaml" class="btn" aria-label="保存配置">💾 保存配置</button>
             <button id="reloadYaml" class="btn btn--ghost" aria-label="重新加载">🔄 重新加载</button>
-            <button id="beautify" class="btn btn--ghost" aria-label="格式化">✨ 格式化</button>
+            <button id="beautify" class="btn btn--ghost" aria-label="格式化">✅ 格式化</button>
           </div>
         </div>
 
@@ -113,9 +175,9 @@
       </section>
 
       <section class="card">
-        <h2>📤 发送测试（/send）</h2>
+        <h2>📬 发送测试（/send）</h2>
         <div id="tokenHint" class="hint" style="margin-bottom: 12px; display: none;">
-          🔑 Token 验证已启用，请求示例：<br>
+          已启用 Token 验证，请求示例：<br>
           <code style="background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; display: inline-block; margin-top: 4px;">
             /send?token=YOUR_TOKEN&text=Hello&desp=World
           </code>
@@ -139,25 +201,106 @@
           <textarea id="sendDesp" class="textarea textarea--small" placeholder="World" aria-label="消息内容"></textarea>
         </label>
         <div class="row">
-          <button id="sendPost" class="btn" aria-label="POST 发送">📮 POST 发送</button>
-          <button id="sendGet" class="btn btn--ghost" aria-label="GET 发送">📨 GET 发送</button>
+          <button id="sendPost" class="btn" aria-label="POST 发送">📤 POST 发送</button>
+          <button id="sendGet" class="btn btn--ghost" aria-label="GET 发送">📥 GET 发送</button>
         </div>
         <pre id="sendResp" class="pre pre--fixed" aria-live="polite"></pre>
+      </section>
+
+      <section class="card">
+        <h2>🧯 安全统计（IP 封禁池）</h2>
+        <div class="row">
+          <button id="banStatsRefresh" class="btn btn--ghost" aria-label="刷新封禁池统计">🔄 刷新</button>
+        </div>
+        <div class="stats-grid">
+          <div class="stat">
+            <div class="stat__label">Auth 池大小</div>
+            <div id="banAuthTotal" class="stat__value">-</div>
+          </div>
+          <div class="stat">
+            <div class="stat__label">Auth 封禁数</div>
+            <div id="banAuthBanned" class="stat__value">-</div>
+          </div>
+          <div class="stat">
+            <div class="stat__label">Token 池大小</div>
+            <div id="banTokenTotal" class="stat__value">-</div>
+          </div>
+          <div class="stat">
+            <div class="stat__label">Token 封禁数</div>
+            <div id="banTokenBanned" class="stat__value">-</div>
+          </div>
+          <div class="stat">
+            <div class="stat__label">最大容量</div>
+            <div id="banMaxEntries" class="stat__value">-</div>
+          </div>
+          <div class="stat">
+            <div class="stat__label">估算内存</div>
+            <div id="banEstimatedBytes" class="stat__value">-</div>
+          </div>
+        </div>
+        <div class="hint" style="margin-top: 10px;">
+          只显示前 50 个 IP（可通过接口 limit 调整），避免前端卡顿。
+        </div>
+        <pre id="banStatsOut" class="pre pre--fixed" aria-live="polite"></pre>
+        <div class="trend-wrap">
+          <h3 class="trend-title">📈 IP 封禁趋势（最近 24h）</h3>
+          <div id="banTrend24h" class="trend-chart" aria-label="24小时趋势"></div>
+          <h3 class="trend-title">📊 IP 封禁趋势（最近 7 天）</h3>
+          <div id="banTrend7d" class="trend-chart trend-chart--daily" aria-label="7天趋势"></div>
+        </div>
+        <div id="dbMaintenance" style="margin-top: 12px; display: none;">
+          <h3 style="margin: 8px 0 6px; font-size: 13px; color: rgba(255,255,255,.85);">🗄️ 数据库维护（SQLite）</h3>
+          <div class="row">
+            <label class="field" style="min-width: 200px;">
+              <div class="field__label">保留天数（清理早于此时间的数据）</div>
+              <input id="dbKeepDays" class="input" placeholder="30" />
+            </label>
+            <button id="dbCleanup" class="btn btn--ghost" aria-label="清理数据库">🧹 清理数据</button>
+            <button id="dbCompact" class="btn btn--ghost" aria-label="压缩数据库">📦 压缩体积</button>
+          </div>
+          <div id="dbMsg" class="msg"></div>
+        </div>
+      </section>
+
+      <section class="card" id="dbNotifications" style="display: none;">
+        <h2>📚 通知记录（SQLite）</h2>
+        <div class="row">
+          <button id="notifPrev" class="btn btn--ghost">⬅️ 上一页</button>
+          <div id="notifPageInfo" class="hint">第 1 页</div>
+          <button id="notifNext" class="btn btn--ghost">下一页 ➡️</button>
+          <button id="notifRefresh" class="btn btn--ghost">🔄 刷新</button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>来源 IP</th>
+                <th>通道</th>
+                <th>标题</th>
+                <th>内容</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody id="notifBody"></tbody>
+          </table>
+        </div>
+        <div id="notifMsg" class="msg"></div>
       </section>
 
       <section class="card">
         <h2>📡 事件流（SSE /api/events）</h2>
         <div class="row">
           <button id="eventsOn" class="btn" aria-label="连接事件流">🔌 连接</button>
-          <button id="eventsOff" class="btn btn--ghost" aria-label="断开事件流">⏸️ 断开</button>
+          <button id="eventsOff" class="btn btn--ghost" aria-label="断开事件流">⛔ 断开</button>
           <button id="eventsClear" class="btn btn--ghost" aria-label="清空事件">🧹 清空</button>
         </div>
         <pre id="events" class="pre" aria-live="polite" aria-label="事件日志"></pre>
-        <div class="hint">💡 预留双向交互：前端可订阅推送结果事件；后续也可扩展 webhook / websocket。</div>
+        <div class="hint">预留双向交互：前端可订阅推送结果事件；后续可扩展 webhook / websocket。</div>
       </section>
 
       <section class="card card--full">
-        <h2>📚 API 使用示例</h2>
+        <h2>🧪 API 使用示例</h2>
         <div class="tabs">
           <button id="tabCurl" class="tab tab--active" aria-label="cURL 示例">cURL</button>
           <button id="tabPython" class="tab" aria-label="Python 示例">Python</button>
@@ -403,14 +546,14 @@ fetch('http://localhost:8084/barkv2', {
         </div>
 
         <div class="hint" id="tokenExampleHint" style="margin-top: 12px; display: none;">
-          💡 Token 验证已启用，所有请求需添加 <code>token</code> 参数
+          Token 验证已启用，所有请求需添加 <code>token</code> 参数
         </div>
       </section>
     </main>
 
     <footer class="foot">
-      <div>⚡ Go 后端：net/http + YAML + SQLite(可选/无 cgo)</div>
-      <div class="hint">💡 若你的 README 显示乱码，请检查文件编码；本 Go 版所有新文件均为 UTF-8。</div>
+      <div>🧠 Go 后端：net/http + YAML + SQLite（可选/无 cgo）</div>
+      <div class="hint">若出现乱码，请检查文件编码；本前端文件均为 UTF-8。</div>
     </footer>
 
     <script src="./app.js"></script>

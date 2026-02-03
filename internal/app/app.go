@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -79,7 +80,9 @@ func New(opts Options) (*Server, func(), error) {
 		sqlitePath = cfg.Get().SQLite.Path
 	}
 	if sqlitePath != "" {
-		s, closeFn, err := store.NewSQLite(sqlitePath)
+		s, closeFn, err := store.NewSQLite(sqlitePath, store.SQLiteOptions{
+			RecordChannelMessages: cfg.Get().SQLite.RecordChannelMessages,
+		})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -96,8 +99,35 @@ func New(opts Options) (*Server, func(), error) {
 		EmbeddedFS:  opts.EmbeddedFS,
 	})
 
+	var cleanupCancel context.CancelFunc = func() {}
+	if ms, ok := st.(store.MaintenanceStore); ok {
+		sqlCfg := cfg.Get().SQLite
+		if sqlCfg.CleanupDays > 0 && sqlCfg.CleanupIntervalHours > 0 {
+			ctx, cancel := context.WithCancel(context.Background())
+			cleanupCancel = cancel
+			interval := time.Duration(sqlCfg.CleanupIntervalHours) * time.Hour
+			go func() {
+				ticker := time.NewTicker(interval)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+						before := time.Now().Add(-time.Duration(sqlCfg.CleanupDays) * 24 * time.Hour)
+						if _, err := ms.Cleanup(context.Background(), before); err != nil {
+							log.Printf("[store] auto cleanup failed: %v", err)
+						}
+					}
+				}
+			}()
+			log.Printf("[store] auto cleanup enabled: keep %d days, interval %v", sqlCfg.CleanupDays, interval)
+		}
+	}
+
 	cleanup := func() {
 		cfg.StopWatching()
+		cleanupCancel()
 		stClose()
 	}
 
@@ -106,4 +136,3 @@ func New(opts Options) (*Server, func(), error) {
 		Handler: api.Handler(),
 	}, cleanup, nil
 }
-

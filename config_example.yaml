@@ -71,8 +71,28 @@ push_token:
   enabled: false  # Set to true to enable token verification
   token: ""       # Leave empty to auto-generate a 64-char random token, or set your own
 
+# Brute-force protection (in-memory IP ban)
+# auth_fail_limit: wrong password attempts before ban
+# auth_ban_minutes: ban duration for auth failures
+# token_fail_limit: wrong push token attempts before ban
+# token_ban_minutes: ban duration for token failures
+# ip_ban_max_entries: max IP entries kept in memory (0 = unlimited)
+# ip_ban_cleanup_seconds: cleanup interval for expired/idle entries
+# ip_ban_idle_minutes: remove IP entries idle for this long
+security:
+  auth_fail_limit: 5
+  auth_ban_minutes: 10
+  token_fail_limit: 10
+  token_ban_minutes: 10
+  ip_ban_max_entries: 10000
+  ip_ban_cleanup_seconds: 60
+  ip_ban_idle_minutes: 60
+
 # SQLite database for storing push history (optional)
 # For Docker: use ./data/pushoo.db (will be saved in /app/data/pushoo.db)
 # For local: use ./data/pushoo.db or any absolute path
 sqlite:
   path: ./data/pushoo.db
+  cleanup_days: 30
+  cleanup_interval_hours: 24
+  record_channel_messages: false
