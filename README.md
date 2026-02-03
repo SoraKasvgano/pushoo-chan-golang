@@ -588,7 +588,7 @@ docker exec pushoo-chan-gover cat /app/data/config.yaml
 
 ## 📄 许可证
 
-MIT License
+AGPLv3
 
 ## 🔗 相关链接
 
