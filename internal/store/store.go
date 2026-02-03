@@ -63,6 +63,13 @@ type NotificationPage struct {
 	Total    int                  `json:"total"`
 }
 
+type StoreSummary struct {
+	NotificationTotal int64     `json:"notification_total"`
+	LastSentAt        time.Time `json:"last_sent_at"`
+	TodaySent         int64     `json:"today_sent"`
+	TodayFailed       int64     `json:"today_failed"`
+}
+
 type TrendPoint struct {
 	Label string `json:"label"`
 	Count int    `json:"count"`
@@ -90,4 +97,8 @@ type BanTrendStore interface {
 
 type NotificationStore interface {
 	ListChannelMessages(ctx context.Context, page, pageSize int) (NotificationPage, error)
+}
+
+type SummaryStore interface {
+	Summary(ctx context.Context) (StoreSummary, error)
 }

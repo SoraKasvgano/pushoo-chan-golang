@@ -2,6 +2,8 @@
   const $ = (id) => document.getElementById(id);
   const cfgEl = $("cfg");
   const cfgMsg = $("cfgMsg");
+  const pageButtons = Array.from(document.querySelectorAll(".nav-btn"));
+  const pageSections = Array.from(document.querySelectorAll(".page-section"));
 
   // Configuration state
   let configData = {
@@ -33,6 +35,28 @@
     } else if (text) {
       el.className += " msg--success fade-in";
     }
+  }
+
+  function switchPage(page) {
+    pageSections.forEach((sec) => {
+      const match = sec.dataset.page === page;
+      sec.classList.toggle("page-section--hidden", !match);
+    });
+    pageButtons.forEach((btn) => {
+      btn.classList.toggle("nav-btn--active", btn.dataset.page === page);
+    });
+    localStorage.setItem("pushoo_page", page);
+    if (page === "overview") {
+      refreshOverview().catch(() => {});
+    }
+  }
+
+  function initPageNav() {
+    const saved = localStorage.getItem("pushoo_page") || "overview";
+    switchPage(saved);
+    pageButtons.forEach((btn) => {
+      btn.addEventListener("click", () => switchPage(btn.dataset.page));
+    });
   }
 
   function formatBanMessage(resp) {
@@ -630,6 +654,91 @@
     }
   }
 
+  let lastOverviewFetch = 0;
+  async function refreshOverview() {
+    const now = Date.now();
+    if (now - lastOverviewFetch < 10000) return;
+    lastOverviewFetch = now;
+
+    const healthEl = $("ovHealth");
+    const sqliteEl = $("ovSqlite");
+    const authEl = $("ovAuthPool");
+    const tokenEl = $("ovTokenPool");
+    const maxEl = $("ovMaxEntries");
+    const updatedEl = $("ovUpdated");
+    const notifyTotalEl = $("ovNotifyTotal");
+    const lastSentEl = $("ovLastSent");
+    const todaySentEl = $("ovTodaySent");
+    const todayFailedEl = $("ovTodayFailed");
+    if (!healthEl || !sqliteEl) return;
+
+    const sqliteEnabled = Boolean(configData.sqlite?.path);
+    sqliteEl.textContent = sqliteEnabled ? "已启用" : "未启用";
+    updatedEl.textContent = new Date().toLocaleTimeString();
+
+    try {
+      const resp = await fetch("/api/health");
+      if (resp.ok) {
+        healthEl.textContent = "OK";
+      } else {
+        healthEl.textContent = `HTTP ${resp.status}`;
+      }
+    } catch {
+      healthEl.textContent = "不可用";
+    }
+
+    try {
+      const resp = await fetch("/api/security/ban_stats?limit=1");
+      if (!resp.ok) {
+        authEl.textContent = "不可用";
+        tokenEl.textContent = "不可用";
+        return;
+      }
+      const data = await resp.json();
+      const auth = data.auth || {};
+      const token = data.token || {};
+      authEl.textContent = `${auth.total_entries ?? 0} / 封禁 ${auth.banned_entries ?? 0}`;
+      tokenEl.textContent = `${token.total_entries ?? 0} / 封禁 ${token.banned_entries ?? 0}`;
+      maxEl.textContent = String(auth.max_entries ?? token.max_entries ?? "-");
+    } catch {
+      authEl.textContent = "不可用";
+      tokenEl.textContent = "不可用";
+    }
+
+    if (!notifyTotalEl || !lastSentEl) return;
+    if (!sqliteEnabled) {
+      notifyTotalEl.textContent = "未启用";
+      lastSentEl.textContent = "未启用";
+      if (todaySentEl) todaySentEl.textContent = "未启用";
+      if (todayFailedEl) todayFailedEl.textContent = "未启用";
+      return;
+    }
+    try {
+      const resp = await fetch("/api/store/summary");
+      if (!resp.ok) {
+        notifyTotalEl.textContent = "不可用";
+        lastSentEl.textContent = "不可用";
+        if (todaySentEl) todaySentEl.textContent = "不可用";
+        if (todayFailedEl) todayFailedEl.textContent = "不可用";
+        return;
+      }
+      const data = await resp.json();
+      notifyTotalEl.textContent = String(data.notification_total ?? 0);
+      if (data.last_sent_at) {
+        lastSentEl.textContent = formatTime(data.last_sent_at);
+      } else {
+        lastSentEl.textContent = "-";
+      }
+      if (todaySentEl) todaySentEl.textContent = String(data.today_sent ?? 0);
+      if (todayFailedEl) todayFailedEl.textContent = String(data.today_failed ?? 0);
+    } catch {
+      notifyTotalEl.textContent = "不可用";
+      lastSentEl.textContent = "不可用";
+      if (todaySentEl) todaySentEl.textContent = "不可用";
+      if (todayFailedEl) todayFailedEl.textContent = "不可用";
+    }
+  }
+
   async function refreshBanTrends() {
     const chart24 = $("banTrend24h");
     const chart7 = $("banTrend7d");
@@ -1107,6 +1216,7 @@ fetch('${jsBarkV2Url}', {
   $("tabJavaScript").addEventListener("click", () => switchExampleTab('javascript'));
 
   // Initialize - Auto-load config on page load
+  initPageNav();
   downloadConfig().then(() => {
     updateApiExamples();
     refreshBanStats().catch((e) => console.error("Failed to load ban stats:", e));

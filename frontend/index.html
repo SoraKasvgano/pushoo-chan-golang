@@ -19,9 +19,77 @@
         </a>
       </div>
     </header>
+    <nav class="top-nav" aria-label="页面分类">
+      <button class="nav-btn nav-btn--active" data-page="overview">🏠 概览</button>
+      <button class="nav-btn" data-page="config">⚙️ 配置</button>
+      <button class="nav-btn" data-page="send">📬 发送测试</button>
+      <button class="nav-btn" data-page="security">🧯 安全/数据库</button>
+      <button class="nav-btn" data-page="events">📡 事件流</button>
+      <button class="nav-btn" data-page="api">🧪 API 示例</button>
+    </nav>
 
     <main class="grid">
-      <section class="card card--full">
+      <section class="card card--full page-section" data-page="overview">
+        <h2>🏠 概览</h2>
+        <div class="stats-grid">
+          <div class="stat">
+            <div class="stat__label">健康检查</div>
+            <div id="ovHealth" class="stat__value">检测中...</div>
+          </div>
+          <div class="stat">
+            <div class="stat__label">SQLite 状态</div>
+            <div id="ovSqlite" class="stat__value">-</div>
+          </div>
+          <div class="stat">
+            <div class="stat__label">通知总量</div>
+            <div id="ovNotifyTotal" class="stat__value">-</div>
+          </div>
+          <div class="stat">
+            <div class="stat__label">最近发送</div>
+            <div id="ovLastSent" class="stat__value">-</div>
+          </div>
+          <div class="stat">
+            <div class="stat__label">今日发送</div>
+            <div id="ovTodaySent" class="stat__value">-</div>
+          </div>
+          <div class="stat">
+            <div class="stat__label">今日失败</div>
+            <div id="ovTodayFailed" class="stat__value">-</div>
+          </div>
+          <div class="stat">
+            <div class="stat__label">Auth 封禁池</div>
+            <div id="ovAuthPool" class="stat__value">-</div>
+          </div>
+          <div class="stat">
+            <div class="stat__label">Token 封禁池</div>
+            <div id="ovTokenPool" class="stat__value">-</div>
+          </div>
+          <div class="stat">
+            <div class="stat__label">封禁池上限</div>
+            <div id="ovMaxEntries" class="stat__value">-</div>
+          </div>
+          <div class="stat">
+            <div class="stat__label">统计更新时间</div>
+            <div id="ovUpdated" class="stat__value">-</div>
+          </div>
+          <div class="stat">
+            <div class="stat__label">快速入口</div>
+            <div class="stat__value">配置 / 发送 / 安全</div>
+          </div>
+          <div class="stat">
+            <div class="stat__label">接口入口</div>
+            <div class="stat__value"><a class="link" href="/api/health" target="_blank" rel="noreferrer">/api/health</a></div>
+          </div>
+          <div class="stat">
+            <div class="stat__label">SSE 事件流</div>
+            <div class="stat__value">/api/events</div>
+          </div>
+        </div>
+        <div class="hint" style="margin-top: 10px;">
+          建议先在“配置”页完成通道与鉴权设置，然后到“发送测试”验证通路。
+        </div>
+      </section>
+      <section class="card card--full page-section" data-page="config">
         <h2>⚙️ 配置管理</h2>
         <div class="tabs">
           <button id="tabGraphical" class="tab tab--active" aria-label="图形化配置">🧩 图形化配置</button>
@@ -174,7 +242,7 @@
         <div id="cfgMsg" class="msg"></div>
       </section>
 
-      <section class="card">
+      <section class="card card--full page-section" data-page="send">
         <h2>📬 发送测试（/send）</h2>
         <div id="tokenHint" class="hint" style="margin-bottom: 12px; display: none;">
           已启用 Token 验证，请求示例：<br>
@@ -207,7 +275,7 @@
         <pre id="sendResp" class="pre pre--fixed" aria-live="polite"></pre>
       </section>
 
-      <section class="card">
+      <section class="card card--full page-section" data-page="security">
         <h2>🧯 安全统计（IP 封禁池）</h2>
         <div class="row">
           <button id="banStatsRefresh" class="btn btn--ghost" aria-label="刷新封禁池统计">🔄 刷新</button>
@@ -262,7 +330,7 @@
         </div>
       </section>
 
-      <section class="card" id="dbNotifications" style="display: none;">
+      <section class="card card--full page-section" data-page="security" id="dbNotifications" style="display: none;">
         <h2>📚 通知记录（SQLite）</h2>
         <div class="row">
           <button id="notifPrev" class="btn btn--ghost">⬅️ 上一页</button>
@@ -288,7 +356,7 @@
         <div id="notifMsg" class="msg"></div>
       </section>
 
-      <section class="card">
+      <section class="card card--full page-section" data-page="events">
         <h2>📡 事件流（SSE /api/events）</h2>
         <div class="row">
           <button id="eventsOn" class="btn" aria-label="连接事件流">🔌 连接</button>
@@ -299,7 +367,7 @@
         <div class="hint">预留双向交互：前端可订阅推送结果事件；后续可扩展 webhook / websocket。</div>
       </section>
 
-      <section class="card card--full">
+      <section class="card card--full page-section" data-page="api">
         <h2>🧪 API 使用示例</h2>
         <div class="tabs">
           <button id="tabCurl" class="tab tab--active" aria-label="cURL 示例">cURL</button>

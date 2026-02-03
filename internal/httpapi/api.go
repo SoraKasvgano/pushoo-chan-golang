@@ -128,6 +128,8 @@ func (a *API) Handler() http.Handler {
 			a.handleStoreCleanup(w, r)
 		case r.URL.Path == "/api/store/notifications":
 			a.handleStoreNotifications(w, r)
+		case r.URL.Path == "/api/store/summary":
+			a.handleStoreSummary(w, r)
 		case r.URL.Path == "/api/events":
 			a.opts.EventHub.ServeSSE(w, r)
 		case strings.HasPrefix(r.URL.Path, "/send"):
@@ -259,6 +261,25 @@ func (a *API) handleStoreNotifications(w http.ResponseWriter, r *http.Request) {
 	data, err := ns.ListChannelMessages(r.Context(), page, pageSize)
 	if err != nil {
 		http.Error(w, "list failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("content-type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(data)
+}
+
+func (a *API) handleStoreSummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	ss, ok := a.opts.Store.(store.SummaryStore)
+	if !ok {
+		http.Error(w, "SQLite store not enabled", http.StatusBadRequest)
+		return
+	}
+	data, err := ss.Summary(r.Context())
+	if err != nil {
+		http.Error(w, "summary failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("content-type", "application/json; charset=utf-8")

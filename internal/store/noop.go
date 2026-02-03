@@ -37,3 +37,7 @@ func (noopStore) ListChannelMessages(_ context.Context, page, pageSize int) (Not
 		Items:    []NotificationRecord{},
 	}, nil
 }
+
+func (noopStore) Summary(_ context.Context) (StoreSummary, error) {
+	return StoreSummary{}, nil
+}

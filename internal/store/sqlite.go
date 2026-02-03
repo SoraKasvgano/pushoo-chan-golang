@@ -423,6 +423,41 @@ LIMIT ? OFFSET ?`, pageSize, offset)
 	}, nil
 }
 
+func (s *sqliteStore) Summary(ctx context.Context) (StoreSummary, error) {
+	var total int64
+	var lastCreated sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM channel_messages`).Scan(&total); err != nil {
+		return StoreSummary{}, err
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT MAX(created_at) FROM channel_messages`).Scan(&lastCreated); err != nil {
+		return StoreSummary{}, err
+	}
+
+	now := time.Now()
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Unix()
+	var todaySent int64
+	var todayFailed int64
+	if err := s.db.QueryRowContext(ctx, `
+SELECT
+  SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS sent,
+  SUM(CASE WHEN status != 'success' THEN 1 ELSE 0 END) AS failed
+FROM channel_messages
+WHERE created_at >= ?`, dayStart).Scan(&todaySent, &todayFailed); err != nil {
+		return StoreSummary{}, err
+	}
+
+	var last time.Time
+	if lastCreated.Valid && lastCreated.Int64 > 0 {
+		last = time.Unix(lastCreated.Int64, 0)
+	}
+	return StoreSummary{
+		NotificationTotal: total,
+		LastSentAt:        last,
+		TodaySent:         todaySent,
+		TodayFailed:       todayFailed,
+	}, nil
+}
+
 func (s *sqliteStore) startBanWorker() {
 	s.banCh = make(chan banOp, banQueueSize)
 	s.banStopCh = make(chan struct{})
