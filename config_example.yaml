@@ -1,0 +1,71 @@
+# pushoo-chan-gover Configuration Example
+# Copy this file to config.yaml and modify as needed
+
+channels:
+  # Telegram Bot
+  - name: telegram
+    type: telegram
+    token: YOUR_BOT_TOKEN
+
+  # Bark (iOS notification)
+  - name: bark
+    type: bark
+    token: https://api.day.app/YOUR_BARK_KEY/
+
+  # DingTalk (钉钉)
+  - name: dingtalk
+    type: dingtalk
+    token: https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN
+
+  # WeCom (企业微信)
+  - name: wecom
+    type: wecom
+    token: YOUR_WECOM_WEBHOOK_KEY
+
+  # iGot
+  - name: igot
+    type: igot
+    token: YOUR_IGOT_KEY
+
+  # PushPlus
+  - name: pushplus
+    type: pushplus
+    token: YOUR_PUSHPLUS_TOKEN
+
+  # Feishu (飞书)
+  - name: feishu
+    type: feishu
+    token: https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_TOKEN
+
+  # Webhook (Custom)
+  - name: webhook
+    type: webhook
+    token: https://your-webhook-url.com/notify
+
+channel_groups:
+  # Group multiple channels together
+  - name: all_channels
+    use:
+      - telegram
+      - bark
+      - dingtalk
+
+  - name: mobile_only
+    use:
+      - telegram
+      - bark
+
+# Default channel to use when no channel is specified
+default_channel: all_channels
+
+# Authentication for web interface and config management (REQUIRED)
+# IMPORTANT: Change these default credentials immediately!
+auth:
+  user: admin
+  pass: your_secure_password
+
+# SQLite database for storing push history (optional)
+# For Docker: use ./data/pushoo.db (will be saved in /app/data/pushoo.db)
+# For local: use ./data/pushoo.db or any absolute path
+sqlite:
+  path: ./data/pushoo.db

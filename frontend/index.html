@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="pushoo-chan Go 版 - 统一推送通知管理工具" />
+    <title>pushoo-chan (Go)</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">
+        <div class="brand__title">🚀 pushoo-chan</div>
+        <div class="brand__sub">Go 版 · 统一推送通知管理</div>
+      </div>
+      <div class="top__right">
+        <a class="link" href="/api/health" target="_blank" rel="noreferrer" aria-label="健康检查">
+          <span class="badge badge--success">Health Check</span>
+        </a>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="card card--full">
+        <h2>⚙️ 配置管理</h2>
+        <div class="tabs">
+          <button id="tabGraphical" class="tab tab--active" aria-label="图形化配置">📊 图形化配置</button>
+          <button id="tabYaml" class="tab" aria-label="YAML 编辑">📝 YAML 编辑</button>
+        </div>
+
+        <!-- Graphical Config Panel -->
+        <div id="panelGraphical" class="config-panel">
+          <div class="config-section">
+            <h3>🔐 认证设置</h3>
+            <div class="config-group">
+              <label class="field">
+                <div class="field__label">用户名 (auth.user)</div>
+                <input id="cfgAuthUser" class="input" placeholder="admin" />
+              </label>
+              <label class="field">
+                <div class="field__label">密码 (auth.pass)</div>
+                <input id="cfgAuthPass" class="input" type="password" placeholder="yourpassword" />
+              </label>
+            </div>
+          </div>
+
+          <div class="config-section">
+            <h3>📢 通道配置</h3>
+            <div id="channelsList" class="channels-list"></div>
+            <button id="addChannel" class="btn btn--ghost btn--small">➕ 添加通道</button>
+          </div>
+
+          <div class="config-section">
+            <h3>👥 通道组配置</h3>
+            <div id="groupsList" class="groups-list"></div>
+            <button id="addGroup" class="btn btn--ghost btn--small">➕ 添加通道组</button>
+          </div>
+
+          <div class="config-section">
+            <h3>⚙️ 其他设置</h3>
+            <div class="config-group">
+              <label class="field">
+                <div class="field__label">默认通道 (default_channel)</div>
+                <input id="cfgDefaultChannel" class="input" placeholder="group1" />
+              </label>
+              <label class="field">
+                <div class="field__label">SQLite 路径 (sqlite.path) - 可选</div>
+                <input id="cfgSqlitePath" class="input" placeholder="./data/pushoo.db" />
+              </label>
+            </div>
+          </div>
+
+          <div class="row">
+            <button id="saveGraphical" class="btn" aria-label="保存配置">💾 保存配置</button>
+            <button id="reloadGraphical" class="btn btn--ghost" aria-label="重新加载">🔄 重新加载</button>
+          </div>
+        </div>
+
+        <!-- YAML Editor Panel -->
+        <div id="panelYaml" class="config-panel" style="display: none;">
+          <textarea id="cfg" class="textarea" spellcheck="false" placeholder="加载中..." aria-label="配置内容"></textarea>
+          <div class="row">
+            <button id="saveYaml" class="btn" aria-label="保存配置">💾 保存配置</button>
+            <button id="reloadYaml" class="btn btn--ghost" aria-label="重新加载">🔄 重新加载</button>
+            <button id="beautify" class="btn btn--ghost" aria-label="格式化">✨ 格式化</button>
+          </div>
+        </div>
+
+        <div id="cfgMsg" class="msg"></div>
+      </section>
+
+      <section class="card">
+        <h2>📤 发送测试（/send）</h2>
+        <div class="row">
+          <label class="field">
+            <div class="field__label">chan（逗号分隔，可空=默认）</div>
+            <input id="sendChan" class="input" placeholder="TG,Bark" aria-label="通道名称" />
+          </label>
+          <label class="field">
+            <div class="field__label">charset（可选，用于 GET/POST 解码）</div>
+            <input id="sendCharset" class="input" placeholder="utf-8 / gbk / gb18030" aria-label="字符集" />
+          </label>
+        </div>
+        <label class="field">
+          <div class="field__label">text（标题）</div>
+          <input id="sendText" class="input" placeholder="Hello" aria-label="消息标题" />
+        </label>
+        <label class="field">
+          <div class="field__label">desp（内容）</div>
+          <textarea id="sendDesp" class="textarea textarea--small" placeholder="World" aria-label="消息内容"></textarea>
+        </label>
+        <div class="row">
+          <button id="sendPost" class="btn" aria-label="POST 发送">📮 POST 发送</button>
+          <button id="sendGet" class="btn btn--ghost" aria-label="GET 发送">📨 GET 发送</button>
+        </div>
+        <pre id="sendResp" class="pre" aria-live="polite"></pre>
+      </section>
+
+      <section class="card">
+        <h2>📡 事件流（SSE /api/events）</h2>
+        <div class="row">
+          <button id="eventsOn" class="btn" aria-label="连接事件流">🔌 连接</button>
+          <button id="eventsOff" class="btn btn--ghost" aria-label="断开事件流">⏸️ 断开</button>
+          <button id="eventsClear" class="btn btn--ghost" aria-label="清空事件">🧹 清空</button>
+        </div>
+        <pre id="events" class="pre" aria-live="polite" aria-label="事件日志"></pre>
+        <div class="hint">💡 预留双向交互：前端可订阅推送结果事件；后续也可扩展 webhook / websocket。</div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div>⚡ Go 后端：net/http + YAML + SQLite(可选/无 cgo)</div>
+      <div class="hint">💡 若你的 README 显示乱码，请检查文件编码；本 Go 版所有新文件均为 UTF-8。</div>
+    </footer>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
+

@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  pushoo-chan:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pushoo-chan-gover
+    image: pushoo-chan-gover:latest
+    ports:
+      - "8084:8084"
+    volumes:
+      # Mount data directory for config.yaml and database persistence
+      # Config file will be automatically created at ./data/config.yaml on first run
+      - ./data:/app/data
+    restart: unless-stopped
+    networks:
+      - pushoo-network
+    environment:
+      - TZ=Asia/Shanghai
+
+networks:
+  pushoo-network:
+    driver: bridge
