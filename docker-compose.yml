@@ -9,16 +9,12 @@ services:
     image: pushoo-chan-gover:latest
     ports:
       - "8084:8084"
+    # 移除data目录挂载（核心修改）
     volumes:
-      # Mount data directory for config.yaml and database persistence
-      # Config file will be automatically created at ./data/config.yaml on first run
-      - ./data:/app/data
+       - /home/docker/pushoogolang:/app/data
     restart: unless-stopped
-    networks:
-      - pushoo-network
     environment:
       - TZ=Asia/Shanghai
-
-networks:
-  pushoo-network:
-    driver: bridge
+    network_mode: "bridge"
+    # （可选）若仍报权限错，临时用root运行
+    user: "root:root"

@@ -20,9 +20,6 @@ WORKDIR /app
 COPY --chown=pushoo:pushoo dist/pushoo-chan-gover-linux-amd64 /app/pushoo-chan-gover
 RUN chmod +x /app/pushoo-chan-gover
 
-# Copy frontend files
-COPY --chown=pushoo:pushoo frontend /app/frontend
-
 # Switch to non-root user
 USER pushoo
 
