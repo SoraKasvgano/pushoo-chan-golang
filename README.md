@@ -98,13 +98,38 @@ go build -o pushoo-chan-gover .
 
 ```yaml
 channels:
+  # tg channels
   - name: telegram
     type: telegram
-    token: YOUR_BOT_TOKEN
-
+    token: 233
+  # bark channels
+  - name: Bark
+    type: bark
+    token: "https://api.day.app/233/"
+  # Dingtalk
   - name: dingtalk
     type: dingtalk
-    token: https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN
+    token: https://oapi.dingtalk.com/robot/send?access_token=2333
+  # Dingtalk
+  - name: dingtalkmeeting
+    type: dingtalk
+    token: https://oapi.dingtalk.com/robot/send?access_token=233
+  # wecom
+  - name: wecom
+    type: wecom
+    token: 233
+  # igot
+  - name: igot
+    type: igot
+    token: 233
+  # pushplus
+  - name: pushplus
+    type: pushplus
+    token: 233
+  # feishu
+  - name: feishu
+    type: feishu
+    token: https://open.feishu.cn/open-apis/bot/v2/hook/2333
 
 channel_groups:
   - name: all_channels
@@ -567,10 +592,21 @@ docker-compose logs -f
 - ✅ Bark (iOS)
 - ✅ 钉钉 (DingTalk)
 - ✅ 企业微信 (WeCom)
+- ✅ 企业微信机器人 (WeCom Bot)
 - ✅ iGot
 - ✅ PushPlus
+- ✅ PushPlus HXTrip
 - ✅ 飞书 (Feishu)
+- ✅ ServerChan / ServerChain
+- ✅ Qmsg
+- ✅ PushDeer
+- ✅ IFTTT
+- ✅ Go-CQHTTP
+- ✅ Atri
+- ✅ Discord
+- ✅ WxPusher
 - ✅ Webhook
+- ✅ Stub (测试)
 
 ## 📝 开发说明
 

@@ -1,17 +1,14 @@
 package push
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 )
 
-// Telegram provider:
-// - token format follows the existing config example: "{botToken}#{chatID}"
+// Telegram provider (compatible with pushoo):
+// - token format: "{botToken}#{chatID}"
 // - sendMessage API: POST https://api.telegram.org/bot{botToken}/sendMessage
 type telegramProvider struct{}
 
@@ -29,36 +26,23 @@ func (telegramProvider) Send(ctx context.Context, req SendRequest) (SendResult, 
 		return SendResult{Status: "error", Detail: "telegram token must be '{botToken}#{chatID}'"}, nil
 	}
 
-	text := req.Content
+	text := escapeTelegramMarkdown(req.Content)
 	if req.Title != "" {
-		if text != "" {
-			text = req.Title + "\n" + text
-		} else {
-			text = req.Title
-		}
+		text = req.Title + "\n\n" + text
 	}
 
 	payload := map[string]any{
-		"chat_id": chatID,
-		"text":    text,
+		"chat_id":    chatID,
+		"text":       text,
+		"parse_mode": "Markdown",
 	}
-	b, _ := json.Marshal(payload)
 	u := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(b))
+	status, body, err := doJSONRequest(ctx, http.MethodPost, u, payload, nil)
 	if err != nil {
 		return SendResult{Status: "error", Detail: err.Error()}, err
 	}
-	httpReq.Header.Set("content-type", "application/json; charset=utf-8")
-	resp, err := sharedHTTPClient.Do(httpReq)
-	if err != nil {
-		return SendResult{Status: "error", Detail: err.Error()}, err
+	if status >= 200 && status < 300 {
+		return SendResult{Status: "success", Detail: formatResponseDetail(body)}, nil
 	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return SendResult{Status: "success", Detail: fmt.Sprintf("%s %s", resp.Status, strings.TrimSpace(string(body)))}, nil
-	}
-	return SendResult{Status: "error", Detail: fmt.Sprintf("status code %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))}, nil
+	return SendResult{Status: "error", Detail: fmt.Sprintf("status code %d: %s", status, strings.TrimSpace(string(body)))}, nil
 }
-

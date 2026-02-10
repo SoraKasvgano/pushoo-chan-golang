@@ -323,10 +323,22 @@
               <option value="bark" ${channel.type === 'bark' ? 'selected' : ''}>Bark</option>
               <option value="dingtalk" ${channel.type === 'dingtalk' ? 'selected' : ''}>钉钉 (DingTalk)</option>
               <option value="wecom" ${channel.type === 'wecom' ? 'selected' : ''}>企业微信 (WeCom)</option>
+              <option value="wecombot" ${channel.type === 'wecombot' ? 'selected' : ''}>企业微信机器人 (WeCom Bot)</option>
               <option value="igot" ${channel.type === 'igot' ? 'selected' : ''}>iGot</option>
               <option value="pushplus" ${channel.type === 'pushplus' ? 'selected' : ''}>PushPlus</option>
+              <option value="pushplushxtrip" ${channel.type === 'pushplushxtrip' ? 'selected' : ''}>PushPlus HXTrip</option>
               <option value="feishu" ${channel.type === 'feishu' ? 'selected' : ''}>飞书 (Feishu)</option>
+              <option value="serverchan" ${channel.type === 'serverchan' ? 'selected' : ''}>ServerChan</option>
+              <option value="serverchain" ${channel.type === 'serverchain' ? 'selected' : ''}>ServerChan (serverchain)</option>
+              <option value="qmsg" ${channel.type === 'qmsg' ? 'selected' : ''}>Qmsg</option>
+              <option value="pushdeer" ${channel.type === 'pushdeer' ? 'selected' : ''}>PushDeer</option>
+              <option value="ifttt" ${channel.type === 'ifttt' ? 'selected' : ''}>IFTTT</option>
+              <option value="gocqhttp" ${channel.type === 'gocqhttp' ? 'selected' : ''}>Go-CQHTTP</option>
+              <option value="atri" ${channel.type === 'atri' ? 'selected' : ''}>Atri</option>
+              <option value="discord" ${channel.type === 'discord' ? 'selected' : ''}>Discord</option>
+              <option value="wxpusher" ${channel.type === 'wxpusher' ? 'selected' : ''}>WxPusher</option>
               <option value="webhook" ${channel.type === 'webhook' ? 'selected' : ''}>Webhook</option>
+              <option value="stub" ${channel.type === 'stub' ? 'selected' : ''}>Stub (测试)</option>
             </select>
           </label>
           <label class="field" style="grid-column: 1 / -1;">

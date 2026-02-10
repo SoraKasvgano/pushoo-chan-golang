@@ -3,15 +3,13 @@ package push
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"strings"
 )
 
 // Bark provider:
-// - token is a base URL like "https://api.day.app/DEVICE_KEY/" (the original config example).
-// - we send GET to {token}/{title}/{body} or {token}/{body}.
+// - token is a base URL like "https://api.day.app/DEVICE_KEY/" (compatible with pushoo).
+// - we send GET to {token}/{title}/{body}/ with title fallback to first line.
 type barkProvider struct{}
 
 func NewBarkProvider() Provider { return barkProvider{} }
@@ -23,34 +21,27 @@ func (barkProvider) Send(ctx context.Context, req SendRequest) (SendResult, erro
 	if base == "" {
 		return SendResult{Status: "error", Detail: "empty bark token"}, nil
 	}
-	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
-		return SendResult{Status: "error", Detail: "bark token must be a URL"}, nil
+	lower := strings.ToLower(base)
+	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
+		base = "https://api.day.app/" + base
 	}
 	if !strings.HasSuffix(base, "/") {
 		base += "/"
 	}
 
-	var full string
-	if req.Title != "" {
-		full = base + url.PathEscape(req.Title) + "/" + url.PathEscape(req.Content)
-	} else {
-		full = base + url.PathEscape(req.Content)
+	title := req.Title
+	if title == "" {
+		title = getTitle(req.Content)
 	}
+	content := markdownToText(req.Content)
+	full := base + url.PathEscape(title) + "/" + url.PathEscape(content) + "/"
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, full, nil)
+	status, body, err := doGetRequest(ctx, full, nil, nil)
 	if err != nil {
 		return SendResult{Status: "error", Detail: err.Error()}, err
 	}
-	resp, err := sharedHTTPClient.Do(httpReq)
-	if err != nil {
-		return SendResult{Status: "error", Detail: err.Error()}, err
+	if status >= 200 && status < 300 {
+		return SendResult{Status: "success", Detail: formatResponseDetail(body)}, nil
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return SendResult{Status: "success", Detail: fmt.Sprintf("%s %s", resp.Status, strings.TrimSpace(string(body)))}, nil
-	}
-	return SendResult{Status: "error", Detail: fmt.Sprintf("status code %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))}, nil
+	return SendResult{Status: "error", Detail: fmt.Sprintf("status code %d: %s", status, strings.TrimSpace(string(body)))}, nil
 }
-

@@ -3,7 +3,9 @@ module pushoo-chan-gover
 go 1.24.0
 
 require (
-	golang.org/x/text v0.16.0
+	github.com/yuin/goldmark v1.7.9
+	golang.org/x/net v0.44.0
+	golang.org/x/text v0.29.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.44.3
 )

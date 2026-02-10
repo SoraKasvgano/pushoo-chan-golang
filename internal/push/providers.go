@@ -1,6 +1,9 @@
 package push
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 type Provider interface {
 	// Type returns config "type" value (e.g. "telegram", "bark").
@@ -30,11 +33,10 @@ func NewProviderRegistry() *ProviderRegistry {
 }
 
 func (r *ProviderRegistry) Register(p Provider) {
-	r.m[p.Type()] = p
+	r.m[strings.ToLower(p.Type())] = p
 }
 
 func (r *ProviderRegistry) Get(typ string) (Provider, bool) {
-	p, ok := r.m[typ]
+	p, ok := r.m[strings.ToLower(typ)]
 	return p, ok
 }
-
