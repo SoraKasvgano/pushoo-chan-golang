@@ -148,6 +148,29 @@
           </div>
 
           <div class="config-section">
+            <h3>🔔 Tawk.to Webhook</h3>
+            <div class="hint" style="margin-bottom: 12px;">
+              接收 Tawk.to 官方 Webhook，并转发到指定通道或通道组
+            </div>
+            <div class="config-group">
+              <label class="field">
+                <div class="field__label">目标通道 (webhooks.tawk.chan)</div>
+                <input id="cfgTawkChan" class="input" placeholder="all_channels" />
+              </label>
+              <label class="field">
+                <div class="field__label">标题前缀 (webhooks.tawk.title)</div>
+                <input id="cfgTawkTitle" class="input" placeholder="tawktochat" />
+              </label>
+            </div>
+            <div class="config-group">
+              <label class="field">
+                <div class="field__label">Webhook Secret (webhooks.tawk.secret)</div>
+                <input id="cfgTawkSecret" class="input" placeholder="可选，需与 Tawk.to 后台一致" />
+              </label>
+            </div>
+          </div>
+
+          <div class="config-section">
             <h3>🛡️ 反暴力破解（IP 临时封禁）</h3>
             <div class="hint" style="margin-bottom: 12px;">
               连续失败达到阈值后，临时封禁 IP（仅内存，不写入磁盘）

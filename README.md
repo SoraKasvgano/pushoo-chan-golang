@@ -139,6 +139,13 @@ channel_groups:
 
 default_channel: all_channels
 
+# Tawk.to Webhook 默认转发设置（可选）
+webhooks:
+  tawk:
+    chan: all_channels
+    title: tawktochat
+    # secret: your_tawk_webhook_secret
+
 # Web 界面认证
 auth:
   user: admin
@@ -249,6 +256,34 @@ curl -X POST "http://localhost:8084/barkv2?token=YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"device_key":"telegram","title":"Hello","body":"World"}'
 ```
+
+#### Tawk.to Webhook 兼容接口
+
+接收 Tawk.to 官方 Webhook 的 `POST JSON`，自动转成普通推送消息，并复用现有通道和通道组。
+
+```bash
+# 在 Tawk.to 后台 Your Request Endpoint URL 填写
+https://your-push-host/webhook/tawk?chan=all_channels&title=tawktochat
+
+# 如果已经在 config.yaml 写了 webhooks.tawk.chan/title，可以只填
+https://your-push-host/webhook/tawk
+```
+
+可选配置：
+
+```yaml
+webhooks:
+  tawk:
+    chan: all_channels
+    title: tawktochat
+    secret: your_tawk_webhook_secret
+```
+
+参数说明：
+
+- `chan`：推送到指定通道或通道组；不填时使用 `webhooks.tawk.chan`，再不填则使用 `default_channel`。
+- `title`：推送标题前缀；不填时使用 `webhooks.tawk.title`，再不填则使用 `Tawk.to`。
+- `secret`：Tawk webhook secret；填写后会校验 `X-Tawk-Signature`，校验失败返回 `401`。
 
 ### 配置接口（需要 HTTP Basic Auth）
 

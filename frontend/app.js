@@ -12,6 +12,7 @@
     channel_groups: [],
     default_channel: "",
     push_token: { enabled: false, token: "" },
+    webhooks: { tawk: { chan: "", title: "", secret: "" } },
     sqlite: { path: "", cleanup_days: 30, cleanup_interval_hours: 24, record_channel_messages: false },
     security: {
       auth_fail_limit: 5,
@@ -129,6 +130,7 @@
         channel_groups: [],
         default_channel: "",
         push_token: { enabled: false, token: "" },
+        webhooks: { tawk: { chan: "", title: "", secret: "" } },
         sqlite: { path: "", cleanup_days: 30, cleanup_interval_hours: 24, record_channel_messages: false },
         security: {
           auth_fail_limit: 5,
@@ -164,6 +166,10 @@
         }
         if (line.startsWith('push_token:')) {
           currentSection = 'push_token';
+          continue;
+        }
+        if (line.startsWith('webhooks:')) {
+          currentSection = 'webhooks';
           continue;
         }
         if (line.startsWith('security:')) {
@@ -213,6 +219,16 @@
           } else if (line.match(/^\s+token:/)) {
             const tokenVal = trimmed.split(':')[1].split('#')[0].trim().replace(/^[\"']|[\"']$/g, '');
             configData.push_token.token = tokenVal;
+          }
+        } else if (currentSection === 'webhooks') {
+          if (line.match(/^\s+tawk:/)) {
+            configData.webhooks.tawk = configData.webhooks.tawk || { chan: "", title: "", secret: "" };
+          } else if (line.match(/^\s+chan:/)) {
+            configData.webhooks.tawk.chan = trimmed.split(':').slice(1).join(':').split('#')[0].trim().replace(/^[\"']|[\"']$/g, '');
+          } else if (line.match(/^\s+title:/)) {
+            configData.webhooks.tawk.title = trimmed.split(':').slice(1).join(':').split('#')[0].trim().replace(/^[\"']|[\"']$/g, '');
+          } else if (line.match(/^\s+secret:/)) {
+            configData.webhooks.tawk.secret = trimmed.split(':').slice(1).join(':').split('#')[0].trim().replace(/^[\"']|[\"']$/g, '');
           }
         } else if (currentSection === 'sqlite') {
           if (line.match(/^\s+path:/)) {
@@ -277,6 +293,9 @@
     // Render push_token
     $("cfgPushTokenEnabled").value = configData.push_token?.enabled ? "true" : "false";
     $("cfgPushTokenToken").value = configData.push_token?.token || "";
+    $("cfgTawkChan").value = configData.webhooks?.tawk?.chan || "";
+    $("cfgTawkTitle").value = configData.webhooks?.tawk?.title || "";
+    $("cfgTawkSecret").value = configData.webhooks?.tawk?.secret || "";
 
     // Render security
     $("cfgAuthFailLimit").value = String(configData.security?.auth_fail_limit ?? 0);
@@ -447,6 +466,11 @@
     configData.default_channel = $("cfgDefaultChannel").value.trim();
     configData.push_token.enabled = $("cfgPushTokenEnabled").value === "true";
     configData.push_token.token = $("cfgPushTokenToken").value.trim();
+    configData.webhooks = configData.webhooks || { tawk: { chan: "", title: "", secret: "" } };
+    configData.webhooks.tawk = configData.webhooks.tawk || { chan: "", title: "", secret: "" };
+    configData.webhooks.tawk.chan = $("cfgTawkChan").value.trim();
+    configData.webhooks.tawk.title = $("cfgTawkTitle").value.trim();
+    configData.webhooks.tawk.secret = $("cfgTawkSecret").value.trim();
     configData.sqlite.path = $("cfgSqlitePath").value.trim();
     configData.sqlite.cleanup_days = parseInt($("cfgSqliteCleanupDays").value.trim() || "0", 10) || 0;
     configData.sqlite.cleanup_interval_hours = parseInt($("cfgSqliteCleanupHours").value.trim() || "0", 10) || 0;
@@ -490,6 +514,20 @@
     yaml += "\npush_token:\n";
     yaml += `  enabled: ${configData.push_token.enabled}\n`;
     yaml += `  token: ${configData.push_token.token || ''}\n`;
+
+    if (configData.webhooks?.tawk?.chan || configData.webhooks?.tawk?.title || configData.webhooks?.tawk?.secret) {
+      yaml += "\nwebhooks:\n";
+      yaml += "  tawk:\n";
+      if (configData.webhooks.tawk.chan) {
+        yaml += `    chan: ${configData.webhooks.tawk.chan}\n`;
+      }
+      if (configData.webhooks.tawk.title) {
+        yaml += `    title: ${configData.webhooks.tawk.title}\n`;
+      }
+      if (configData.webhooks.tawk.secret) {
+        yaml += `    secret: ${configData.webhooks.tawk.secret}\n`;
+      }
+    }
 
     yaml += "\nsecurity:\n";
     yaml += `  auth_fail_limit: ${configData.security.auth_fail_limit || 0}\n`;

@@ -23,9 +23,20 @@ type Config struct {
 	Auth           AuthConfig           `yaml:"auth,omitempty"`
 	PushToken      PushTokenConfig      `yaml:"push_token,omitempty"`
 	Security       SecurityConfig       `yaml:"security,omitempty"`
+	Webhooks       WebhookConfig        `yaml:"webhooks,omitempty"`
 
 	// Optional extensions (ignored by older configs):
 	SQLite SQLiteConfig `yaml:"sqlite,omitempty"`
+}
+
+type WebhookConfig struct {
+	Tawk TawkWebhookConfig `yaml:"tawk,omitempty"`
+}
+
+type TawkWebhookConfig struct {
+	Secret string `yaml:"secret,omitempty"`
+	Chan   string `yaml:"chan,omitempty"`
+	Title  string `yaml:"title,omitempty"`
 }
 
 type SQLiteConfig struct {
@@ -105,6 +116,16 @@ channel_groups:
 
 # Default channel to use when no channel is specified
 default_channel: stub_channel
+
+# Optional: default settings for Tawk.to webhook forwarding.
+# Webhook URL example:
+# https://your-push-host/webhook/tawk?chan=stub_group&title=tawktochat
+# webhooks:
+#   tawk:
+#     chan: stub_group
+#     title: tawktochat
+#     # Optional: set this if you enabled webhook secret in Tawk.to.
+#     # secret: your_tawk_webhook_secret
 
 # Authentication for web interface and config management (REQUIRED)
 # IMPORTANT: Change these default credentials immediately!

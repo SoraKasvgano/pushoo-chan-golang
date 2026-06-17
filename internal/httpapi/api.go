@@ -105,6 +105,8 @@ func (a *API) Handler() http.Handler {
 			isPublicEndpoint = true
 		case strings.HasPrefix(r.URL.Path, "/bark"):
 			isPublicEndpoint = true
+		case r.URL.Path == "/webhook/tawk" || strings.HasPrefix(r.URL.Path, "/webhook/tawk/"):
+			isPublicEndpoint = true
 		}
 
 		// Require authentication for web interface and config endpoints
@@ -138,6 +140,8 @@ func (a *API) Handler() http.Handler {
 			a.handleBarkV2(w, r)
 		case strings.HasPrefix(r.URL.Path, "/bark"):
 			a.handleBark(w, r)
+		case r.URL.Path == "/webhook/tawk" || strings.HasPrefix(r.URL.Path, "/webhook/tawk/"):
+			a.handleTawkWebhook(w, r)
 		case strings.HasPrefix(r.URL.Path, "/config/"):
 			a.handleConfig(w, r)
 		default:

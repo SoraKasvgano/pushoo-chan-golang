@@ -58,6 +58,16 @@ channel_groups:
 # Default channel to use when no channel is specified
 default_channel: all_channels
 
+# Optional: default settings for Tawk.to webhook forwarding.
+# Webhook URL example:
+# https://your-push-host/webhook/tawk?chan=all_channels&title=tawktochat
+webhooks:
+  tawk:
+    chan: all_channels
+    title: tawktochat
+    # Optional: set this if you enabled webhook secret in Tawk.to.
+    # secret: your_tawk_webhook_secret
+
 # Authentication for web interface and config management (REQUIRED)
 # IMPORTANT: Change these default credentials immediately!
 auth:
