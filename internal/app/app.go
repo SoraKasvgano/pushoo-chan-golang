@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"pushoo-chan-gover/internal/config"
@@ -116,13 +117,16 @@ func New(opts Options) (*Server, func(), error) {
 	})
 
 	var cleanupCancel context.CancelFunc = func() {}
+	var cleanupWG sync.WaitGroup
 	if ms, ok := st.(store.MaintenanceStore); ok {
 		sqlCfg := cfg.Get().SQLite
 		if sqlCfg.CleanupDays > 0 && sqlCfg.CleanupIntervalHours > 0 {
 			ctx, cancel := context.WithCancel(context.Background())
 			cleanupCancel = cancel
 			interval := time.Duration(sqlCfg.CleanupIntervalHours) * time.Hour
+			cleanupWG.Add(1)
 			go func() {
+				defer cleanupWG.Done()
 				ticker := time.NewTicker(interval)
 				defer ticker.Stop()
 				for {
@@ -144,6 +148,7 @@ func New(opts Options) (*Server, func(), error) {
 	cleanup := func() {
 		cfg.StopWatching()
 		cleanupCancel()
+		cleanupWG.Wait()
 		stClose()
 	}
 

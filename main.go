@@ -72,11 +72,12 @@ func main() {
 	defer cleanup()
 
 	httpSrv := &http.Server{
-		Addr:         srv.Addr,
-		Handler:      srv.Handler,
-		ReadTimeout:  *readTimeout,
-		WriteTimeout: *writeTimeout,
-		IdleTimeout:  *idleTimeout,
+		Addr:              srv.Addr,
+		Handler:           srv.Handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       *readTimeout,
+		WriteTimeout:      *writeTimeout,
+		IdleTimeout:       *idleTimeout,
 	}
 
 	go func() {
@@ -103,4 +104,3 @@ func main() {
 	}
 	log.Println("[server] Server stopped")
 }
-

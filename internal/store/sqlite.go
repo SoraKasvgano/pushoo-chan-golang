@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -14,6 +15,14 @@ import (
 
 type sqliteStore struct {
 	db *sql.DB
+
+	recordCh     chan recordOp
+	recordStopCh chan struct{}
+	recordWG     sync.WaitGroup
+	recordMu     sync.RWMutex
+	recordClosed bool
+	closeOnce    sync.Once
+	closeErr     error
 
 	banCh     chan banOp
 	banStopCh chan struct{}
@@ -42,8 +51,14 @@ type banOp struct {
 	op          banOpType
 }
 
+type recordOp struct {
+	msg        Message
+	deliveries []Delivery
+}
+
 const (
 	banQueueSize     = 4096
+	recordQueueSize  = 4096
 	banMaxBatch      = 500
 	banFlushInterval = 1 * time.Second
 )
@@ -62,7 +77,7 @@ func NewSQLite(path string, opts SQLiteOptions) (Store, func(), error) {
 	isNewDB := os.IsNotExist(err)
 
 	// modernc sqlite supports "file:" DSN.
-	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)", filepath.ToSlash(path))
+	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_pragma=read_uncommitted(0)&_pragma=wal_autocheckpoint(1000)", filepath.ToSlash(path))
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, nil, err
@@ -84,6 +99,7 @@ func NewSQLite(path string, opts SQLiteOptions) (Store, func(), error) {
 		_ = db.Close()
 		return nil, nil, err
 	}
+	s.startRecordWorker()
 	s.startBanWorker()
 
 	if isNewDB {
@@ -103,7 +119,7 @@ func (s *sqliteStore) verifyPragmas(ctx context.Context) error {
 	if journalMode != "wal" {
 		return fmt.Errorf("SQLite WAL mode is not active (journal_mode=%s)", journalMode)
 	}
-	var busyTimeout, foreignKeys int
+	var busyTimeout, foreignKeys, readUncommitted int
 	if err := s.db.QueryRowContext(ctx, "PRAGMA busy_timeout;").Scan(&busyTimeout); err != nil {
 		return fmt.Errorf("read SQLite busy timeout: %w", err)
 	}
@@ -115,6 +131,33 @@ func (s *sqliteStore) verifyPragmas(ctx context.Context) error {
 	}
 	if foreignKeys != 1 {
 		return fmt.Errorf("SQLite foreign key enforcement is not active")
+	}
+	if err := s.db.QueryRowContext(ctx, "PRAGMA read_uncommitted;").Scan(&readUncommitted); err != nil {
+		return fmt.Errorf("read SQLite isolation setting: %w", err)
+	}
+	if readUncommitted != 0 {
+		return fmt.Errorf("SQLite dirty reads are enabled")
+	}
+	rows, err := s.db.QueryContext(ctx, "PRAGMA foreign_key_check;")
+	if err != nil {
+		return fmt.Errorf("check SQLite foreign keys: %w", err)
+	}
+	if rows.Next() {
+		_ = rows.Close()
+		return fmt.Errorf("SQLite contains orphaned rows; PRAGMA foreign_key_check failed")
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("scan SQLite foreign key check: %w", err)
+	}
+	_ = rows.Close()
+	var emptyMessages int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM messages m
+WHERE NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.message_id = m.id)`).Scan(&emptyMessages); err != nil {
+		return fmt.Errorf("check SQLite message consistency: %w", err)
+	}
+	if emptyMessages != 0 {
+		return fmt.Errorf("SQLite contains %d messages without delivery records", emptyMessages)
 	}
 	return nil
 }
@@ -172,6 +215,7 @@ CREATE TABLE IF NOT EXISTS channel_messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_deliveries_message_id ON deliveries(message_id);
+CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
 CREATE INDEX IF NOT EXISTS idx_ip_bans_last_seen ON ip_bans(last_seen);
 CREATE INDEX IF NOT EXISTS idx_channel_messages_message_id ON channel_messages(message_id);
 CREATE INDEX IF NOT EXISTS idx_channel_messages_created_at ON channel_messages(created_at);
@@ -180,6 +224,27 @@ CREATE INDEX IF NOT EXISTS idx_channel_messages_created_at ON channel_messages(c
 }
 
 func (s *sqliteStore) Record(ctx context.Context, msg Message, deliveries []Delivery) error {
+	if err := validateRecord(deliveries); err != nil {
+		return err
+	}
+	s.recordMu.RLock()
+	defer s.recordMu.RUnlock()
+	if s.recordClosed {
+		return fmt.Errorf("SQLite store is closed")
+	}
+	op := recordOp{msg: msg, deliveries: append([]Delivery(nil), deliveries...)}
+	select {
+	case s.recordCh <- op:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *sqliteStore) recordSync(ctx context.Context, msg Message, deliveries []Delivery) error {
+	if err := validateRecord(deliveries); err != nil {
+		return err
+	}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return err
@@ -251,6 +316,47 @@ func (s *sqliteStore) Record(ctx context.Context, msg Message, deliveries []Deli
 	return nil
 }
 
+func validateRecord(deliveries []Delivery) error {
+	if len(deliveries) == 0 {
+		return fmt.Errorf("push history requires at least one delivery")
+	}
+	for i, delivery := range deliveries {
+		if delivery.ChannelName == "" || delivery.Status == "" {
+			return fmt.Errorf("delivery %d requires channel name and status", i+1)
+		}
+	}
+	return nil
+}
+
+func (s *sqliteStore) startRecordWorker() {
+	s.recordCh = make(chan recordOp, recordQueueSize)
+	s.recordStopCh = make(chan struct{})
+	s.recordWG.Add(1)
+	go func() {
+		defer s.recordWG.Done()
+		write := func(op recordOp) {
+			if err := s.recordSync(context.Background(), op.msg, op.deliveries); err != nil {
+				log.Printf("[store] failed to record push history: %v", err)
+			}
+		}
+		for {
+			select {
+			case op := <-s.recordCh:
+				write(op)
+			case <-s.recordStopCh:
+				for {
+					select {
+					case op := <-s.recordCh:
+						write(op)
+					default:
+						return
+					}
+				}
+			}
+		}
+	}()
+}
+
 func (s *sqliteStore) UpsertBan(ctx context.Context, rec BanRecord) error {
 	return s.enqueueBanOp(ctx, banOp{
 		kind:        rec.Kind,
@@ -318,6 +424,11 @@ func (s *sqliteStore) Cleanup(ctx context.Context, before time.Time) (CleanupRes
 }
 
 func (s *sqliteStore) BanTrends(ctx context.Context) (BanTrendStats, error) {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return BanTrendStats{}, err
+	}
+	defer tx.Rollback()
 	now := time.Now()
 	hourStart := now.Truncate(time.Hour)
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
@@ -338,7 +449,7 @@ func (s *sqliteStore) BanTrends(ctx context.Context) (BanTrendStats, error) {
 		dayPoints = append(dayPoints, TrendPoint{Label: label, Count: 0})
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := tx.QueryContext(ctx, `
 SELECT strftime('%Y-%m-%d %H:00', updated_at, 'unixepoch', 'localtime') AS bucket, COUNT(*)
 FROM ip_bans
 WHERE updated_at >= ?
@@ -367,7 +478,7 @@ GROUP BY bucket
 		}
 	}
 
-	rows, err = s.db.QueryContext(ctx, `
+	rows, err = tx.QueryContext(ctx, `
 SELECT strftime('%Y-%m-%d', updated_at, 'unixepoch', 'localtime') AS bucket, COUNT(*)
 FROM ip_bans
 WHERE updated_at >= ?
@@ -395,6 +506,9 @@ GROUP BY bucket
 			dayPoints[i].Count = v
 		}
 	}
+	if err := tx.Commit(); err != nil {
+		return BanTrendStats{}, err
+	}
 
 	return BanTrendStats{
 		Last24h: hourPoints,
@@ -413,13 +527,18 @@ func (s *sqliteStore) ListChannelMessages(ctx context.Context, page, pageSize in
 		pageSize = 100
 	}
 	offset := (page - 1) * pageSize
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return NotificationPage{}, err
+	}
+	defer tx.Rollback()
 
 	var total int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM channel_messages`).Scan(&total); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM channel_messages`).Scan(&total); err != nil {
 		return NotificationPage{}, err
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := tx.QueryContext(ctx, `
 SELECT id, created_at, remote_addr, channel_name, channel_type, title, content, status, detail
 FROM channel_messages
 ORDER BY created_at DESC, id DESC
@@ -442,6 +561,9 @@ LIMIT ? OFFSET ?`, pageSize, offset)
 	if err := rows.Err(); err != nil {
 		return NotificationPage{}, err
 	}
+	if err := tx.Commit(); err != nil {
+		return NotificationPage{}, err
+	}
 
 	return NotificationPage{
 		Items:    items,
@@ -452,12 +574,17 @@ LIMIT ? OFFSET ?`, pageSize, offset)
 }
 
 func (s *sqliteStore) Summary(ctx context.Context) (StoreSummary, error) {
-	var total int64
-	var lastCreated sql.NullInt64
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM channel_messages`).Scan(&total); err != nil {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
 		return StoreSummary{}, err
 	}
-	if err := s.db.QueryRowContext(ctx, `SELECT MAX(created_at) FROM channel_messages`).Scan(&lastCreated); err != nil {
+	defer tx.Rollback()
+	var total int64
+	var lastCreated sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM channel_messages`).Scan(&total); err != nil {
+		return StoreSummary{}, err
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT MAX(created_at) FROM channel_messages`).Scan(&lastCreated); err != nil {
 		return StoreSummary{}, err
 	}
 
@@ -465,10 +592,10 @@ func (s *sqliteStore) Summary(ctx context.Context) (StoreSummary, error) {
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Unix()
 	var todaySent int64
 	var todayFailed int64
-	if err := s.db.QueryRowContext(ctx, `
+	if err := tx.QueryRowContext(ctx, `
 SELECT
-  SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS sent,
-  SUM(CASE WHEN status != 'success' THEN 1 ELSE 0 END) AS failed
+  COALESCE(SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END), 0) AS sent,
+  COALESCE(SUM(CASE WHEN status != 'success' THEN 1 ELSE 0 END), 0) AS failed
 FROM channel_messages
 WHERE created_at >= ?`, dayStart).Scan(&todaySent, &todayFailed); err != nil {
 		return StoreSummary{}, err
@@ -477,6 +604,9 @@ WHERE created_at >= ?`, dayStart).Scan(&todaySent, &todayFailed); err != nil {
 	var last time.Time
 	if lastCreated.Valid && lastCreated.Int64 > 0 {
 		last = time.Unix(lastCreated.Int64, 0)
+	}
+	if err := tx.Commit(); err != nil {
+		return StoreSummary{}, err
 	}
 	return StoreSummary{
 		NotificationTotal: total,
@@ -598,9 +728,17 @@ ON CONFLICT(kind, ip) DO UPDATE SET
 }
 
 func (s *sqliteStore) Close() error {
-	if s.banStopCh != nil {
-		close(s.banStopCh)
-		s.banWG.Wait()
-	}
-	return s.db.Close()
+	s.closeOnce.Do(func() {
+		s.recordMu.Lock()
+		s.recordClosed = true
+		close(s.recordStopCh)
+		s.recordMu.Unlock()
+		s.recordWG.Wait()
+		if s.banStopCh != nil {
+			close(s.banStopCh)
+			s.banWG.Wait()
+		}
+		s.closeErr = s.db.Close()
+	})
+	return s.closeErr
 }
