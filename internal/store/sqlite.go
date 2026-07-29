@@ -62,7 +62,7 @@ func NewSQLite(path string, opts SQLiteOptions) (Store, func(), error) {
 	isNewDB := os.IsNotExist(err)
 
 	// modernc sqlite supports "file:" DSN.
-	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_busy_timeout=5000", filepath.ToSlash(path))
+	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)", filepath.ToSlash(path))
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, nil, err
@@ -80,6 +80,10 @@ func NewSQLite(path string, opts SQLiteOptions) (Store, func(), error) {
 		_ = db.Close()
 		return nil, nil, err
 	}
+	if err := s.verifyPragmas(context.Background()); err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
 	s.startBanWorker()
 
 	if isNewDB {
@@ -89,6 +93,30 @@ func NewSQLite(path string, opts SQLiteOptions) (Store, func(), error) {
 	}
 
 	return s, func() { _ = s.Close() }, nil
+}
+
+func (s *sqliteStore) verifyPragmas(ctx context.Context) error {
+	var journalMode string
+	if err := s.db.QueryRowContext(ctx, "PRAGMA journal_mode;").Scan(&journalMode); err != nil {
+		return fmt.Errorf("read SQLite journal mode: %w", err)
+	}
+	if journalMode != "wal" {
+		return fmt.Errorf("SQLite WAL mode is not active (journal_mode=%s)", journalMode)
+	}
+	var busyTimeout, foreignKeys int
+	if err := s.db.QueryRowContext(ctx, "PRAGMA busy_timeout;").Scan(&busyTimeout); err != nil {
+		return fmt.Errorf("read SQLite busy timeout: %w", err)
+	}
+	if busyTimeout < 5000 {
+		return fmt.Errorf("SQLite busy timeout is too low (%dms)", busyTimeout)
+	}
+	if err := s.db.QueryRowContext(ctx, "PRAGMA foreign_keys;").Scan(&foreignKeys); err != nil {
+		return fmt.Errorf("read SQLite foreign keys setting: %w", err)
+	}
+	if foreignKeys != 1 {
+		return fmt.Errorf("SQLite foreign key enforcement is not active")
+	}
+	return nil
 }
 
 func (s *sqliteStore) init(ctx context.Context) error {

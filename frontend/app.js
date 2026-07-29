@@ -536,6 +536,7 @@
     renderTargetSelect($("cfgDefaultChannel"), configData.default_channel, "请选择默认发送目标");
     renderTargetSelect($("cfgTawkChan"), configData.webhooks.tawk.chan, "使用默认发送目标");
     renderSendTargets();
+    updateApiExamples();
   };
 
   window.removeChannel = (idx) => {
@@ -568,6 +569,7 @@
     renderTargetSelect($("cfgDefaultChannel"), configData.default_channel, "请选择默认发送目标");
     renderTargetSelect($("cfgTawkChan"), configData.webhooks.tawk.chan, "使用默认发送目标");
     renderSendTargets();
+    updateApiExamples();
   };
 
   window.removeGroup = (idx) => {
@@ -1143,31 +1145,31 @@
 
     // Update Python example (token must be in query or form for POST)
     const pythonTokenLine = tokenEnabled ? `    'token': '${token}',\n` : "";
-    const pythonPostUrl = tokenEnabled ? `http://localhost:8084/send?token=${token}` : "http://localhost:8084/send";
-    const pythonBarkTitleBodyUrl = tokenEnabled ? `http://localhost:8084/bark/telegram/Hello/World?token=${token}` : "http://localhost:8084/bark/telegram/Hello/World";
-    const pythonBarkPostFormUrl = "http://localhost:8084/bark/telegram";
-    const pythonBarkV2Url = tokenEnabled ? `http://localhost:8084/barkv2?token=${token}` : "http://localhost:8084/barkv2";
+    const pythonPostUrl = tokenEnabled ? `${baseURL}/send?token=${token}` : `${baseURL}/send`;
+    const pythonBarkTitleBodyUrl = `${baseURL}/bark/${encodeURIComponent(channelName)}/Hello/World${tokenParamOnly}`;
+    const pythonBarkPostFormUrl = `${baseURL}/bark/${encodeURIComponent(channelName)}`;
+    const pythonBarkV2Url = `${baseURL}/barkv2${tokenParamOnly}`;
     $("pythonExample").textContent = `import requests
 
 # GET 请求
-response = requests.get('http://localhost:8084/send', params={
+response = requests.get('${baseURL}/send', params={
 ${pythonTokenLine}    'text': 'Hello',
     'desp': 'World',
-    'chan': 'telegram'
+    'chan': '${channelName}'
 })
 
 # POST 请求（表单）
-response = requests.post('http://localhost:8084/send', data={
+response = requests.post('${baseURL}/send', data={
 ${pythonTokenLine}    'text': 'Hello',
     'desp': 'World',
-    'chan': 'telegram'
+    'chan': '${groupName}'
 })
 
 # POST 请求（JSON）
 response = requests.post('${pythonPostUrl}', json={
     'text': 'Hello',
     'desp': 'World',
-    'chan': 'telegram'
+    'chan': '${channelName},${groupName}'
 })
 
 # Bark GET（标题/内容）
@@ -1181,7 +1183,7 @@ ${pythonTokenLine}    'title': 'Hello',
 
 # Bark v2 接口（JSON）
 response = requests.post('${pythonBarkV2Url}', json={
-    'device_key': 'telegram',
+    'device_key': '${channelName}',
     'title': 'Hello',
     'body': 'World'
 })
@@ -1208,9 +1210,9 @@ func main() {
   params := url.Values{}
 ${goTokenParamLine}  params.Set("text", "Hello")
   params.Set("desp", "World")
-  params.Set("chan", "telegram")
+  params.Set("chan", "${channelName}")
 
-  resp, err := http.Get("http://localhost:8084/send?" + params.Encode())
+  resp, err := http.Get("${baseURL}/send?" + params.Encode())
   if err != nil {
     panic(err)
   }
@@ -1222,8 +1224,8 @@ ${goTokenParamLine}  params.Set("text", "Hello")
   form := url.Values{}
 ${goTokenFormLine}  form.Set("text", "Hello")
   form.Set("desp", "World")
-  form.Set("chan", "telegram")
-  resp, err = http.Post("http://localhost:8084/send", "application/x-www-form-urlencoded", bytes.NewBufferString(form.Encode()))
+  form.Set("chan", "${groupName}")
+  resp, err = http.Post("${baseURL}/send", "application/x-www-form-urlencoded", bytes.NewBufferString(form.Encode()))
   if err != nil {
     panic(err)
   }
@@ -1235,9 +1237,9 @@ ${goTokenFormLine}  form.Set("text", "Hello")
   body, _ = json.Marshal(map[string]string{
     "text": "Hello",
     "desp": "World",
-    "chan": "telegram",
+    "chan": "${channelName},${groupName}",
   })
-  resp, err = http.Post("http://localhost:8084/send${tokenParamOnly}", "application/json", bytes.NewReader(body))
+  resp, err = http.Post("${baseURL}/send${tokenParamOnly}", "application/json", bytes.NewReader(body))
   if err != nil {
     panic(err)
   }
@@ -1246,7 +1248,7 @@ ${goTokenFormLine}  form.Set("text", "Hello")
   fmt.Println("POST json status:", resp.Status, string(body))
 
   // Bark GET（标题/内容）
-  resp, err = http.Get("http://localhost:8084/bark/telegram/Hello/World${tokenParamOnly}")
+  resp, err = http.Get("${baseURL}/bark/${encodeURIComponent(channelName)}/Hello/World${tokenParamOnly}")
   if err != nil {
     panic(err)
   }
@@ -1258,7 +1260,7 @@ ${goTokenFormLine}  form.Set("text", "Hello")
   barkForm := url.Values{}
 ${goTokenBarkFormLine}  barkForm.Set("title", "Hello")
   barkForm.Set("body", "World")
-  resp, err = http.Post("http://localhost:8084/bark/telegram", "application/x-www-form-urlencoded", bytes.NewBufferString(barkForm.Encode()))
+  resp, err = http.Post("${baseURL}/bark/${encodeURIComponent(channelName)}", "application/x-www-form-urlencoded", bytes.NewBufferString(barkForm.Encode()))
   if err != nil {
     panic(err)
   }
@@ -1268,11 +1270,11 @@ ${goTokenBarkFormLine}  barkForm.Set("title", "Hello")
 
   // Bark v2 接口（JSON）
   barkBody, _ := json.Marshal(map[string]string{
-    "device_key": "telegram",
+    "device_key": "${channelName}",
     "title": "Hello",
     "body": "World",
   })
-  resp, err = http.Post("http://localhost:8084/barkv2${tokenParamOnly}", "application/json", bytes.NewReader(barkBody))
+  resp, err = http.Post("${baseURL}/barkv2${tokenParamOnly}", "application/json", bytes.NewReader(barkBody))
   if err != nil {
     panic(err)
   }
@@ -1283,16 +1285,16 @@ ${goTokenBarkFormLine}  barkForm.Set("title", "Hello")
 
     // Update JavaScript example (token must be in query or form for POST)
     const jsTokenLine = tokenEnabled ? `  token: '${token}',\n` : "";
-    const jsBarkTitleBodyUrl = tokenEnabled ? `http://localhost:8084/bark/telegram/Hello/World?token=${token}` : "http://localhost:8084/bark/telegram/Hello/World";
-    const jsBarkPostFormUrl = "http://localhost:8084/bark/telegram";
-    const jsBarkV2Url = tokenEnabled ? `http://localhost:8084/barkv2?token=${token}` : "http://localhost:8084/barkv2";
+    const jsBarkTitleBodyUrl = `${baseURL}/bark/${encodeURIComponent(channelName)}/Hello/World${tokenParamOnly}`;
+    const jsBarkPostFormUrl = `${baseURL}/bark/${encodeURIComponent(channelName)}`;
+    const jsBarkV2Url = `${baseURL}/barkv2${tokenParamOnly}`;
     $("jsExample").textContent = `// GET 请求
 const params = new URLSearchParams({
 ${jsTokenLine}  text: 'Hello',
   desp: 'World',
-  chan: 'telegram'
+  chan: '${channelName}'
 });
-fetch(\`http://localhost:8084/send?\${params}\`)
+fetch(\`${baseURL}/send?\${params}\`)
   .then(res => res.json())
   .then(data => console.log(data));
 
@@ -1300,9 +1302,9 @@ fetch(\`http://localhost:8084/send?\${params}\`)
 const form = new URLSearchParams({
 ${jsTokenLine}  text: 'Hello',
   desp: 'World',
-  chan: 'telegram'
+  chan: '${groupName}'
 });
-fetch('http://localhost:8084/send', {
+fetch('${baseURL}/send', {
   method: 'POST',
   headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   body: form.toString()
@@ -1311,13 +1313,13 @@ fetch('http://localhost:8084/send', {
   .then(data => console.log(data));
 
 // POST 请求（JSON）
-fetch('http://localhost:8084/send${tokenParamOnly}', {
+fetch('${baseURL}/send${tokenParamOnly}', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
     text: 'Hello',
     desp: 'World',
-    chan: 'telegram'
+    chan: '${channelName},${groupName}'
   })
 })
   .then(res => res.json())
@@ -1346,7 +1348,7 @@ fetch('${jsBarkV2Url}', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    device_key: 'telegram',
+    device_key: '${channelName}',
     title: 'Hello',
     body: 'World'
   })
@@ -1440,9 +1442,18 @@ fetch('${jsBarkV2Url}', {
   $("panelGraphical").addEventListener("change", () => setConfigDirty(true));
   $("cfgDefaultChannel").addEventListener("change", (event) => {
     configData.default_channel = event.target.value;
+    updateApiExamples();
   });
   $("cfgTawkChan").addEventListener("change", (event) => {
     configData.webhooks.tawk.chan = event.target.value;
+  });
+  $("cfgPushTokenEnabled").addEventListener("change", (event) => {
+    configData.push_token.enabled = event.target.value === "true";
+    updateApiExamples();
+  });
+  $("cfgPushTokenToken").addEventListener("input", (event) => {
+    configData.push_token.token = event.target.value.trim();
+    updateApiExamples();
   });
   cfgEl.addEventListener("input", () => setConfigDirty(true));
   window.addEventListener("beforeunload", (event) => {
