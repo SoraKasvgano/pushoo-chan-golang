@@ -90,7 +90,10 @@
         </div>
       </section>
       <section class="card card--full page-section" data-page="config">
-        <h2>⚙️ 配置管理</h2>
+        <div class="config-heading">
+          <h2>⚙️ 配置管理</h2>
+          <span id="configState" class="config-state">正在加载</span>
+        </div>
         <div class="tabs">
           <button id="tabGraphical" class="tab tab--active" aria-label="图形化配置">🧩 图形化配置</button>
           <button id="tabYaml" class="tab" aria-label="YAML 编辑">📝 YAML 编辑</button>
@@ -114,14 +117,25 @@
 
           <div class="config-section">
             <h3>📤 通道配置</h3>
+            <div class="hint config-description">通知通道是一个实际的消息服务端点，例如 Telegram Bot 或 Bark 设备。</div>
             <div id="channelsList" class="channels-list"></div>
             <button id="addChannel" class="btn btn--ghost btn--small">➕ 添加通道</button>
           </div>
 
           <div class="config-section">
             <h3>👥 通道组配置</h3>
+            <div class="hint config-description">发送目标组用于一次投递到多个通知通道；组内只能选择上方已配置的通道。</div>
             <div id="groupsList" class="groups-list"></div>
             <button id="addGroup" class="btn btn--ghost btn--small">➕ 添加通道组</button>
+          </div>
+
+          <div class="config-section config-section--routing">
+            <h3>🎯 默认发送目标</h3>
+            <div class="hint config-description">调用推送接口时未指定 chan，就发送到这里。既可以选择一个通知通道，也可以选择一个发送目标组。</div>
+            <label class="field">
+              <div class="field__label">未指定目标时发送到 (default_channel)</div>
+              <select id="cfgDefaultChannel" class="input"></select>
+            </label>
           </div>
 
           <div class="config-section">
@@ -154,8 +168,8 @@
             </div>
             <div class="config-group">
               <label class="field">
-                <div class="field__label">目标通道 (webhooks.tawk.chan)</div>
-                <input id="cfgTawkChan" class="input" placeholder="all_channels" />
+                <div class="field__label">Webhook 发送目标 (webhooks.tawk.chan)</div>
+                <select id="cfgTawkChan" class="input"></select>
               </label>
               <label class="field">
                 <div class="field__label">标题前缀 (webhooks.tawk.title)</div>
@@ -217,10 +231,6 @@
             <h3>⚙️ 其他设置</h3>
             <div class="config-group">
               <label class="field">
-                <div class="field__label">默认通道 (default_channel)</div>
-                <input id="cfgDefaultChannel" class="input" placeholder="group1" />
-              </label>
-              <label class="field">
                 <div class="field__label">SQLite 路径 (sqlite.path) - 可选</div>
                 <input id="cfgSqlitePath" class="input" placeholder="./data/pushoo.db" />
               </label>
@@ -275,8 +285,8 @@
         </div>
         <div class="row">
           <label class="field">
-            <div class="field__label">chan（逗号分隔，可空=默认）</div>
-            <input id="sendChan" class="input" placeholder="TG,Bark" aria-label="通道名称" />
+            <div class="field__label">发送目标（不选则使用默认发送目标）</div>
+            <div id="sendTargets" class="channel-checklist"></div>
           </label>
           <label class="field">
             <div class="field__label">charset（可选，用于 GET/POST 解码）</div>
@@ -392,6 +402,16 @@
 
       <section class="card card--full page-section" data-page="api">
         <h2>🧪 API 使用示例</h2>
+        <div class="api-target-guide">
+          <h3>发送目标用法</h3>
+          <div class="target-example-grid">
+            <div><div class="field__label">使用默认发送目标（省略 chan）</div><pre class="code-block" id="exampleTargetDefault"></pre></div>
+            <div><div class="field__label">指定单个通知通道</div><pre class="code-block" id="exampleTargetChannel"></pre></div>
+            <div><div class="field__label">指定发送目标组</div><pre class="code-block" id="exampleTargetGroup"></pre></div>
+            <div><div class="field__label">组合多个目标（逗号分隔并自动去重）</div><pre class="code-block" id="exampleTargetMultiple"></pre></div>
+          </div>
+          <div class="hint" id="exampleTargetMeaning"></div>
+        </div>
         <div class="tabs">
           <button id="tabCurl" class="tab tab--active" aria-label="cURL 示例">cURL</button>
           <button id="tabPython" class="tab" aria-label="Python 示例">Python</button>

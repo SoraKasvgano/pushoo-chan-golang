@@ -450,6 +450,15 @@ body{
 .config-panel{
   animation: fadeIn 0.3s ease-in;
 }
+.config-heading{display:flex; align-items:center; justify-content:space-between; gap:12px;}
+.config-state{
+  color:var(--muted);
+  font-size:12px;
+}
+.config-state--dirty{color:var(--warning);}
+.config-state--saved{color:var(--accent);}
+.token-examples{display:grid; gap:6px; margin:8px 0;}
+.token-examples code{display:block; padding:7px 9px; border-radius:6px; background:rgba(15,23,42,.7); overflow-wrap:anywhere;}
 .config-section{
   margin-bottom: 24px;
   padding: 16px;
@@ -462,6 +471,11 @@ body{
   font-size: 14px;
   color: rgba(255,255,255,.88);
   font-weight: 600;
+}
+.config-description{margin:-6px 0 14px;}
+.btn:disabled, .input:disabled{
+  opacity:.45;
+  cursor:not-allowed;
 }
 .config-group{
   display: grid;
@@ -540,6 +554,38 @@ body{
   gap: 6px;
   margin-bottom: 8px;
 }
+.channel-checklist{
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));
+  gap:8px;
+}
+.channel-choice{
+  display:grid;
+  grid-template-columns:18px 1fr;
+  align-items:center;
+  gap:0 8px;
+  min-height:48px;
+  padding:8px 10px;
+  border:1px solid var(--border);
+  border-radius:6px;
+  background:rgba(15,23,42,.45);
+  cursor:pointer;
+}
+.channel-choice:hover{border-color:rgba(248,250,252,.32);}
+.channel-choice:has(input:checked){
+  border-color:var(--accent);
+  background:rgba(34,197,94,.1);
+}
+.channel-choice input{grid-row:1 / span 2; margin:0; accent-color:var(--accent);}
+.channel-choice span{font-size:13px; overflow-wrap:anywhere;}
+.channel-choice small{color:var(--muted); font-size:11px;}
+.empty-state{
+  color:var(--muted);
+  padding:12px;
+  border:1px dashed var(--border);
+  border-radius:6px;
+}
+.config-section--routing{border-color:rgba(34,197,94,.35);}
 .channel-tag{
   padding: 4px 10px;
   background: rgba(34,197,94,.15);
@@ -562,6 +608,11 @@ body{
 }
 
 /* Example Panels */
+.api-target-guide{margin:0 0 18px;}
+.api-target-guide h3{font-size:13px; margin:0 0 8px;}
+.target-example-grid{display:grid; grid-template-columns:1fr 1fr; gap:0 14px;}
+.target-example-grid .code-block{margin-top:4px; white-space:pre-wrap; overflow-wrap:anywhere;}
+@media (max-width:768px){.target-example-grid{grid-template-columns:1fr;}}
 .example-panel{
   animation: fadeIn 0.3s ease-in;
 }

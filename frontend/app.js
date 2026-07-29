@@ -24,6 +24,31 @@
       ip_ban_idle_minutes: 60
     }
   };
+  let configRevision = "";
+  let configLoaded = false;
+  let configDirty = false;
+  let activeConfigTab = "graphical";
+
+  function escapeHTML(value) {
+    return String(value ?? "").replace(/[&<>'"]/g, (char) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
+    })[char]);
+  }
+
+  function setConfigReady(ready) {
+    configLoaded = ready;
+    ["saveGraphical", "saveYaml", "addChannel", "addGroup"].forEach((id) => {
+      const el = $(id);
+      if (el) el.disabled = !ready;
+    });
+  }
+
+  function setConfigDirty(dirty) {
+    configDirty = dirty;
+    const state = $("configState");
+    state.textContent = dirty ? "有未保存更改" : (configLoaded ? "已与服务器同步" : "正在加载");
+    state.className = `config-state ${dirty ? "config-state--dirty" : (configLoaded ? "config-state--saved" : "")}`;
+  }
 
   function setMsg(el, text, isErr, isLoading = false) {
     el.textContent = text || "";
@@ -73,6 +98,7 @@
   }
 
   async function downloadConfig() {
+    setConfigReady(false);
     setMsg(cfgMsg, "下载中...", false, true);
     try {
       const resp = await fetch("/config/download");
@@ -82,29 +108,53 @@
         setMsg(cfgMsg, banMsg || `下载失败: ${resp.status} ${txt}`, true);
         return;
       }
+      const dataResp = await fetch("/config/data");
+      if (!dataResp.ok) {
+        throw new Error(`结构化配置加载失败 (${dataResp.status})`);
+      }
+      const rawRevision = resp.headers.get("X-Config-Revision") || "";
+      const dataRevision = dataResp.headers.get("X-Config-Revision") || "";
+      if (rawRevision && dataRevision && rawRevision !== dataRevision) {
+        return downloadConfig();
+      }
       cfgEl.value = txt;
-      parseYamlToGraphical(txt);
-      setMsg(cfgMsg, "下载完成", false);
+      configData = await dataResp.json();
+      configRevision = dataRevision || rawRevision;
+      renderGraphicalConfig();
+      setConfigReady(true);
+      setConfigDirty(false);
+      setMsg(cfgMsg, "已加载服务器当前配置", false);
     } catch (err) {
+      setConfigReady(false);
+      setConfigDirty(false);
       setMsg(cfgMsg, `下载失败: ${err.message}`, true);
     }
   }
 
   async function uploadConfig() {
+    if (!configLoaded) throw new Error("配置尚未成功加载，已阻止保存");
     setMsg(cfgMsg, "上传中...", false, true);
     try {
       const resp = await fetch("/config/upload", {
         method: "POST",
-        headers: { "content-type": "text/plain; charset=utf-8" },
+        headers: {
+          "content-type": "text/plain; charset=utf-8",
+          "If-Match": configRevision
+        },
         body: cfgEl.value || "",
       });
       const banMsg = formatBanMessage(resp);
       const txt = await resp.text();
       if (!resp.ok) {
-        setMsg(cfgMsg, banMsg || `上传失败: ${resp.status} ${txt}`, true);
+        const message = resp.status === 409
+          ? "服务器配置已被修改，请重新加载后再编辑"
+          : (banMsg || `上传失败: ${resp.status} ${txt}`);
+        setMsg(cfgMsg, message, true);
         return;
       }
-      setMsg(cfgMsg, "上传完成", false);
+      configRevision = resp.headers.get("X-Config-Revision") || configRevision;
+      await downloadConfig();
+      setMsg(cfgMsg, "配置已保存并重新加载", false);
     } catch (err) {
       setMsg(cfgMsg, `上传失败: ${err.message}`, true);
     }
@@ -120,7 +170,7 @@
     setMsg(cfgMsg, "已做简单整理（不保证严格 YAML 格式化）", false);
   }
 
-  // Simple YAML parser (basic implementation)
+  // Legacy parser kept only for compatibility with older embedded pages.
   function parseYamlToGraphical(yamlText) {
     try {
       const lines = yamlText.split('\n');
@@ -281,10 +331,19 @@
   }
 
   function renderGraphicalConfig() {
+    configData.channels = Array.isArray(configData.channels) ? configData.channels : [];
+    configData.channel_groups = Array.isArray(configData.channel_groups) ? configData.channel_groups : [];
+    configData.auth ||= { user: "", pass: "" };
+    configData.push_token ||= { enabled: false, token: "" };
+    configData.webhooks ||= { tawk: {} };
+    configData.webhooks.tawk ||= {};
+    configData.sqlite ||= {};
+    configData.security ||= {};
+
     // Render auth
     $("cfgAuthUser").value = configData.auth.user || "";
     $("cfgAuthPass").value = configData.auth.pass || "";
-    $("cfgDefaultChannel").value = configData.default_channel || "";
+    renderTargetSelect($("cfgDefaultChannel"), configData.default_channel, "请选择默认发送目标");
     $("cfgSqlitePath").value = configData.sqlite?.path || "";
     $("cfgSqliteCleanupDays").value = String(configData.sqlite?.cleanup_days ?? 0);
     $("cfgSqliteCleanupHours").value = String(configData.sqlite?.cleanup_interval_hours ?? 0);
@@ -293,7 +352,7 @@
     // Render push_token
     $("cfgPushTokenEnabled").value = configData.push_token?.enabled ? "true" : "false";
     $("cfgPushTokenToken").value = configData.push_token?.token || "";
-    $("cfgTawkChan").value = configData.webhooks?.tawk?.chan || "";
+    renderTargetSelect($("cfgTawkChan"), configData.webhooks?.tawk?.chan, "使用默认发送目标");
     $("cfgTawkTitle").value = configData.webhooks?.tawk?.title || "";
     $("cfgTawkSecret").value = configData.webhooks?.tawk?.secret || "";
 
@@ -309,11 +368,17 @@
     // Show/hide token hint in send test section
     const tokenHint = $("tokenHint");
     if (configData.push_token?.enabled && configData.push_token?.token) {
+      const firstChannel = configData.channels.find((item) => item.name)?.name;
+      const firstGroup = configData.channel_groups.find((item) => item.name)?.name;
+      const sampleTarget = firstChannel || firstGroup || "TARGET_NAME";
+      const sampleURL = `${window.location.origin}/send?token=${encodeURIComponent(configData.push_token.token)}&text=Hello&desp=World`;
       tokenHint.style.display = "block";
-      tokenHint.innerHTML = `已启用 Token 验证，请求示例：<br>
-        <code style="background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 4px; display: inline-block; margin-top: 4px;">
-          /send?token=${configData.push_token.token}&text=Hello&desp=World
-        </code>`;
+      tokenHint.innerHTML = `<strong>已启用 Token 验证</strong>
+        <div class="token-examples">
+          <code>${escapeHTML(sampleURL)}</code>
+          <code>${escapeHTML(sampleURL)}&amp;chan=${escapeHTML(encodeURIComponent(sampleTarget))}</code>
+        </div>
+        <span>第一条使用默认发送目标；第二条指定${firstChannel ? "单个通知通道" : "发送目标组"} ${escapeHTML(sampleTarget)}。Token 可放在查询参数或表单字段中；JSON 请求请放在 URL 查询参数中。</span>`;
     } else {
       tokenHint.style.display = "none";
     }
@@ -326,13 +391,13 @@
       channelEl.className = "channel-item";
       channelEl.innerHTML = `
         <div class="channel-header">
-          <div class="channel-title">通道 #${idx + 1}</div>
+          <div class="channel-title" id="channelTitle${idx}">通知通道 ${escapeHTML(channel.name) || `#${idx + 1}`}</div>
           <button class="btn btn--danger btn--small" onclick="window.removeChannel(${idx})">🗑️ 删除</button>
         </div>
         <div class="channel-fields">
           <label class="field">
             <div class="field__label">名称 (name)</div>
-            <input class="input" value="${channel.name || ""}" onchange="window.updateChannel(${idx}, 'name', this.value)" />
+            <input class="input" value="${escapeHTML(channel.name)}" oninput="window.renameChannel(${idx}, this.value)" placeholder="例如：telegram_work" />
           </label>
           <label class="field">
             <div class="field__label">类型 (type)</div>
@@ -362,14 +427,39 @@
           </label>
           <label class="field" style="grid-column: 1 / -1;">
             <div class="field__label">Token / URL</div>
-            <input class="input" value="${channel.token || ""}" onchange="window.updateChannel(${idx}, 'token', this.value)" />
+            <input class="input" value="${escapeHTML(channel.token)}" onchange="window.updateChannel(${idx}, 'token', this.value)" />
           </label>
         </div>
       `;
       channelsList.appendChild(channelEl);
     });
 
-    // Render groups
+    renderGroups();
+    renderSendTargets();
+
+    updateApiExamples();
+    updateDbMaintenanceVisibility();
+  }
+
+  function renderTargetSelect(select, value, emptyLabel) {
+    const channels = configData.channels.filter((item) => item.name);
+    const groups = configData.channel_groups.filter((item) => item.name);
+    select.innerHTML = `<option value="">${emptyLabel}</option>`;
+    if (channels.length) {
+      select.insertAdjacentHTML("beforeend", `<optgroup label="单个通知通道">${channels.map((item) =>
+        `<option value="${escapeHTML(item.name)}">${escapeHTML(item.name)}</option>`).join("")}</optgroup>`);
+    }
+    if (groups.length) {
+      select.insertAdjacentHTML("beforeend", `<optgroup label="发送目标组（同时发送到多个通道）">${groups.map((item) =>
+        `<option value="${escapeHTML(item.name)}">${escapeHTML(item.name)}</option>`).join("")}</optgroup>`);
+    }
+    if (value && ![...channels, ...groups].some((item) => item.name === value)) {
+      select.insertAdjacentHTML("beforeend", `<option value="${escapeHTML(value)}">${escapeHTML(value)}（目标不存在，请重新选择）</option>`);
+    }
+    select.value = value || "";
+  }
+
+  function renderGroups() {
     const groupsList = $("groupsList");
     groupsList.innerHTML = "";
     configData.channel_groups.forEach((group, idx) => {
@@ -377,48 +467,88 @@
       groupEl.className = "group-item";
       groupEl.innerHTML = `
         <div class="group-header">
-          <div class="group-title">通道组 #${idx + 1}</div>
+          <div class="group-title" id="groupTitle${idx}">发送目标组 ${escapeHTML(group.name) || `#${idx + 1}`}</div>
           <button class="btn btn--danger btn--small" onclick="window.removeGroup(${idx})">🗑️ 删除</button>
         </div>
         <div class="group-fields">
           <label class="field" style="grid-column: 1 / -1;">
             <div class="field__label">组名 (name)</div>
-            <input class="input" value="${group.name || ""}" onchange="window.updateGroup(${idx}, 'name', this.value)" />
+            <input class="input" value="${escapeHTML(group.name)}" oninput="window.renameGroup(${idx}, this.value)" placeholder="例如：all_devices" />
           </label>
         </div>
         <div class="group-channels">
-          <div class="group-channels-label">使用的通道 (use):</div>
-          <div class="group-channels-list" id="groupChannels${idx}">
-            ${group.use.map((ch, chIdx) => `
-              <div class="channel-tag">
-                ${ch}
-                <span class="channel-tag-remove" onclick="window.removeGroupChannel(${idx}, ${chIdx})">×</span>
-              </div>
-            `).join('')}
-          </div>
-          <div class="row">
-            <input class="input" id="newChannelInput${idx}" placeholder="输入通道名称" style="flex: 1;" />
-            <button class="btn btn--small" onclick="window.addGroupChannel(${idx})">➕ 添加</button>
+          <div class="group-channels-label">选择该组包含的通知通道</div>
+          <div class="channel-checklist">
+            ${configData.channels.filter((ch) => ch.name).map((ch) => `
+              <label class="channel-choice">
+                <input type="checkbox" ${group.use.includes(ch.name) ? 'checked' : ''}
+                  onchange="window.toggleGroupChannel(${idx}, ${configData.channels.indexOf(ch)}, this.checked)" />
+                <span>${escapeHTML(ch.name)}</span>
+                <small>${escapeHTML(ch.type || '未选择类型')}</small>
+              </label>
+            `).join('') || '<div class="empty-state">请先在上方添加并命名通知通道</div>'}
           </div>
         </div>
       `;
       groupsList.appendChild(groupEl);
     });
 
-    updateApiExamples();
-    updateDbMaintenanceVisibility();
+  }
+
+  function renderSendTargets() {
+    const container = $("sendTargets");
+    if (!container) return;
+    const targets = [
+      ...configData.channels.filter((item) => item.name).map((item) => ({ ...item, kind: "单个通知通道" })),
+      ...configData.channel_groups.filter((item) => item.name).map((item) => ({ ...item, kind: "发送目标组" }))
+    ];
+    container.innerHTML = targets.map((target, idx) => `
+      <label class="channel-choice">
+        <input type="checkbox" data-send-target="${escapeHTML(target.name)}" />
+        <span>${escapeHTML(target.name)}</span>
+        <small>${target.kind}</small>
+      </label>
+    `).join("") || '<div class="empty-state">尚未配置可用的发送目标</div>';
   }
 
   // Global functions for inline event handlers
   window.updateChannel = (idx, field, value) => {
     if (configData.channels[idx]) {
       configData.channels[idx][field] = value;
+      if (field === "type") renderGroups();
     }
   };
 
+  window.renameChannel = (idx, value) => {
+    const channel = configData.channels[idx];
+    if (!channel) return;
+    const oldName = channel.name;
+    channel.name = value.trim();
+    if (oldName && oldName !== channel.name) {
+      configData.channel_groups.forEach((group) => {
+        group.use = group.use.map((name) => name === oldName ? channel.name : name).filter(Boolean);
+      });
+      if (configData.default_channel === oldName) configData.default_channel = channel.name;
+      if (configData.webhooks.tawk.chan === oldName) configData.webhooks.tawk.chan = channel.name;
+    }
+    $(`channelTitle${idx}`).textContent = `通知通道 ${channel.name || `#${idx + 1}`}`;
+    renderGroups();
+    renderTargetSelect($("cfgDefaultChannel"), configData.default_channel, "请选择默认发送目标");
+    renderTargetSelect($("cfgTawkChan"), configData.webhooks.tawk.chan, "使用默认发送目标");
+    renderSendTargets();
+  };
+
   window.removeChannel = (idx) => {
+    const name = configData.channels[idx]?.name;
+    const usedBy = configData.channel_groups.filter((group) => group.use.includes(name)).map((group) => group.name);
+    if (usedBy.length) {
+      setMsg(cfgMsg, `无法删除：通知通道 ${name} 正被发送目标组 ${usedBy.join("、")} 使用`, true);
+      return;
+    }
     configData.channels.splice(idx, 1);
+    if (configData.default_channel === name) configData.default_channel = "";
     renderGraphicalConfig();
+    setConfigDirty(true);
   };
 
   window.updateGroup = (idx, field, value) => {
@@ -427,36 +557,45 @@
     }
   };
 
+  window.renameGroup = (idx, value) => {
+    const group = configData.channel_groups[idx];
+    if (!group) return;
+    const oldName = group.name;
+    group.name = value.trim();
+    if (configData.default_channel === oldName) configData.default_channel = group.name;
+    if (configData.webhooks.tawk.chan === oldName) configData.webhooks.tawk.chan = group.name;
+    $(`groupTitle${idx}`).textContent = `发送目标组 ${group.name || `#${idx + 1}`}`;
+    renderTargetSelect($("cfgDefaultChannel"), configData.default_channel, "请选择默认发送目标");
+    renderTargetSelect($("cfgTawkChan"), configData.webhooks.tawk.chan, "使用默认发送目标");
+    renderSendTargets();
+  };
+
   window.removeGroup = (idx) => {
+    const name = configData.channel_groups[idx]?.name;
     configData.channel_groups.splice(idx, 1);
+    if (configData.default_channel === name) configData.default_channel = "";
     renderGraphicalConfig();
+    setConfigDirty(true);
   };
 
-  window.addGroupChannel = (idx) => {
-    const input = $(`newChannelInput${idx}`);
-    const channelName = input.value.trim();
-    if (channelName && configData.channel_groups[idx]) {
-      configData.channel_groups[idx].use.push(channelName);
-      input.value = "";
-      renderGraphicalConfig();
-    }
-  };
-
-  window.removeGroupChannel = (groupIdx, channelIdx) => {
-    if (configData.channel_groups[groupIdx]) {
-      configData.channel_groups[groupIdx].use.splice(channelIdx, 1);
-      renderGraphicalConfig();
-    }
+  window.toggleGroupChannel = (groupIdx, channelIdx, checked) => {
+    const group = configData.channel_groups[groupIdx];
+    const channelName = configData.channels[channelIdx]?.name;
+    if (!group || !channelName) return;
+    group.use = group.use.filter((name) => name !== channelName);
+    if (checked) group.use.push(channelName);
   };
 
   function addChannel() {
     configData.channels.push({ name: "", type: "", token: "" });
     renderGraphicalConfig();
+    setConfigDirty(true);
   }
 
   function addGroup() {
     configData.channel_groups.push({ name: "", use: [] });
     renderGraphicalConfig();
+    setConfigDirty(true);
   }
 
   function graphicalToYaml() {
@@ -550,17 +689,48 @@
   }
 
   async function saveGraphicalConfig() {
-    const yaml = graphicalToYaml();
-    cfgEl.value = yaml;
-    await uploadConfig();
+    if (!configLoaded) throw new Error("配置尚未成功加载，已阻止保存");
+    graphicalToYaml(); // Collect the current form values into configData.
+    const names = [...configData.channels, ...configData.channel_groups].map((item) => item.name.trim());
+    if (names.some((name) => !name)) throw new Error("通知通道和发送目标组都必须填写名称");
+    if (new Set(names).size !== names.length) throw new Error("通知通道与发送目标组的名称不能重复");
+    if (configData.channels.some((item) => !item.type)) throw new Error("每个通知通道都必须选择服务类型");
+    if (!configData.default_channel) throw new Error("请选择默认发送目标");
+    if (!configData.auth.user || !configData.auth.pass) throw new Error("管理用户名和密码不能为空");
+
+    setMsg(cfgMsg, "保存中...", false, true);
+    const resp = await fetch("/config/data", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "If-Match": configRevision
+      },
+      body: JSON.stringify(configData)
+    });
+    const text = await resp.text();
+    if (!resp.ok) {
+      throw new Error(resp.status === 409
+        ? "服务器配置已被修改，请重新加载后再编辑"
+        : `保存失败 (${resp.status}): ${text}`);
+    }
+    configRevision = resp.headers.get("X-Config-Revision") || configRevision;
+    await downloadConfig();
+    setMsg(cfgMsg, "配置已保存并重新加载", false);
   }
 
   async function reloadGraphicalConfig() {
+    if (configDirty && !window.confirm("重新加载会放弃当前未保存的更改，是否继续？")) return;
     await downloadConfig();
   }
 
   // Tab switching
-  function switchTab(tab) {
+  async function switchTab(tab) {
+    if (tab === activeConfigTab) return;
+    if (configDirty) {
+      if (!window.confirm("切换编辑模式会放弃当前未保存的更改，是否继续？")) return;
+      await downloadConfig();
+    }
+    activeConfigTab = tab;
     const tabGraphical = $("tabGraphical");
     const tabYaml = $("tabYaml");
     const panelGraphical = $("panelGraphical");
@@ -571,22 +741,17 @@
       tabYaml.classList.remove('tab--active');
       panelGraphical.style.display = 'block';
       panelYaml.style.display = 'none';
-      // Sync from YAML to graphical
-      if (cfgEl.value) {
-        parseYamlToGraphical(cfgEl.value);
-      }
     } else {
       tabGraphical.classList.remove('tab--active');
       tabYaml.classList.add('tab--active');
       panelGraphical.style.display = 'none';
       panelYaml.style.display = 'block';
-      // Sync from graphical to YAML
-      cfgEl.value = graphicalToYaml();
     }
   }
 
   async function send(method) {
-    const chan = $("sendChan").value || "";
+    const chan = Array.from(document.querySelectorAll("[data-send-target]:checked"))
+      .map((item) => item.dataset.sendTarget).join(",");
     const charset = $("sendCharset").value || "";
     const text = $("sendText").value || "";
     const desp = $("sendDesp").value || "";
@@ -949,20 +1114,32 @@
     const token = configData.push_token?.token || "YOUR_TOKEN";
     const tokenParam = tokenEnabled ? `token=${token}&` : "";
     const tokenParamOnly = tokenEnabled ? `?token=${token}` : "";
+    const baseURL = window.location.origin;
+    const channelName = configData.channels.find((item) => item.name)?.name || "YOUR_CHANNEL";
+    const groupName = configData.channel_groups.find((item) => item.name)?.name || "YOUR_CHANNEL_GROUP";
+    const defaultName = configData.default_channel || "未配置";
+    const authQuery = tokenEnabled ? `token=${encodeURIComponent(token)}&` : "";
+    const makeURL = (target) => `${baseURL}/send?${authQuery}text=Hello&desp=World${target ? `&chan=${encodeURIComponent(target)}` : ""}`;
+
+    $("exampleTargetDefault").textContent = makeURL("");
+    $("exampleTargetChannel").textContent = makeURL(channelName);
+    $("exampleTargetGroup").textContent = makeURL(groupName);
+    $("exampleTargetMultiple").textContent = makeURL(`${channelName},${groupName}`);
+    $("exampleTargetMeaning").textContent = `当前默认发送目标：${defaultName}。chan 接受通知通道名称、发送目标组名称，或以英文逗号分隔的多个名称；发送目标组会展开为其包含的通知通道，重复通道只发送一次。`;
 
     // Update cURL examples (token is accepted in query or form, not JSON body)
-    $("curlGet").textContent = `curl "http://localhost:8084/send?${tokenParam}text=Hello&desp=World&chan=telegram"`;
-    $("curlPostForm").textContent = `curl -X POST http://localhost:8084/send \\
-  -d "${tokenParam}text=Hello&desp=World&chan=telegram"`;
-    $("curlPostJson").textContent = `curl -X POST "http://localhost:8084/send${tokenParamOnly}" \\
+    $("curlGet").textContent = `curl "${makeURL(channelName)}"`;
+    $("curlPostForm").textContent = `curl -X POST ${baseURL}/send \\
+  -d "${tokenParam}text=Hello&desp=World&chan=${groupName}"`;
+    $("curlPostJson").textContent = `curl -X POST "${baseURL}/send${tokenParamOnly}" \\
   -H "Content-Type: application/json" \\
-  -d '{"text":"Hello","desp":"World","chan":"telegram"}'`;
-    $("curlBarkGetTitleBody").textContent = `curl "http://localhost:8084/bark/telegram/Hello/World${tokenParamOnly}"`;
-    $("curlBarkPostForm").textContent = `curl -X POST http://localhost:8084/bark/telegram \\
+  -d '{"text":"Hello","desp":"World","chan":"${channelName},${groupName}"}'`;
+    $("curlBarkGetTitleBody").textContent = `curl "${baseURL}/bark/${encodeURIComponent(channelName)}/Hello/World${tokenParamOnly}"`;
+    $("curlBarkPostForm").textContent = `curl -X POST ${baseURL}/bark/${encodeURIComponent(channelName)} \\
   -d "${tokenEnabled ? `token=${token}&` : ""}title=Hello&body=World"`;
-    $("curlBarkV2").textContent = `curl -X POST "http://localhost:8084/barkv2${tokenParamOnly}" \\
+    $("curlBarkV2").textContent = `curl -X POST "${baseURL}/barkv2${tokenParamOnly}" \\
   -H "Content-Type: application/json" \\
-  -d '{"device_key":"telegram","title":"Hello","body":"World"}'`;
+  -d '{"device_key":"${channelName}","title":"Hello","body":"World"}'`;
 
     // Update Python example (token must be in query or form for POST)
     const pythonTokenLine = tokenEnabled ? `    'token': '${token}',\n` : "";
@@ -1248,8 +1425,8 @@ fetch('${jsBarkV2Url}', {
   }
 
   // Graphical config event listeners
-  $("tabGraphical").addEventListener("click", () => switchTab('graphical'));
-  $("tabYaml").addEventListener("click", () => switchTab('yaml'));
+  $("tabGraphical").addEventListener("click", () => switchTab('graphical').catch((e) => setMsg(cfgMsg, String(e), true)));
+  $("tabYaml").addEventListener("click", () => switchTab('yaml').catch((e) => setMsg(cfgMsg, String(e), true)));
   $("addChannel").addEventListener("click", addChannel);
   $("addGroup").addEventListener("click", addGroup);
   $("saveGraphical").addEventListener("click", () => saveGraphicalConfig().catch((e) => setMsg(cfgMsg, String(e), true)));
@@ -1257,7 +1434,22 @@ fetch('${jsBarkV2Url}', {
 
   // YAML editor event listeners
   $("saveYaml").addEventListener("click", () => uploadConfig().catch((e) => setMsg(cfgMsg, String(e), true)));
-  $("reloadYaml").addEventListener("click", () => downloadConfig().catch((e) => setMsg(cfgMsg, String(e), true)));
+  $("reloadYaml").addEventListener("click", () => reloadGraphicalConfig().catch((e) => setMsg(cfgMsg, String(e), true)));
+
+  $("panelGraphical").addEventListener("input", () => setConfigDirty(true));
+  $("panelGraphical").addEventListener("change", () => setConfigDirty(true));
+  $("cfgDefaultChannel").addEventListener("change", (event) => {
+    configData.default_channel = event.target.value;
+  });
+  $("cfgTawkChan").addEventListener("change", (event) => {
+    configData.webhooks.tawk.chan = event.target.value;
+  });
+  cfgEl.addEventListener("input", () => setConfigDirty(true));
+  window.addEventListener("beforeunload", (event) => {
+    if (!configDirty) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
 
   // Example tab event listeners
   $("tabCurl").addEventListener("click", () => switchExampleTab('curl'));
@@ -1266,6 +1458,7 @@ fetch('${jsBarkV2Url}', {
   $("tabJavaScript").addEventListener("click", () => switchExampleTab('javascript'));
 
   // Initialize - Auto-load config on page load
+  setConfigReady(false);
   initPageNav();
   downloadConfig().then(() => {
     updateApiExamples();

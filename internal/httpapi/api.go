@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"gopkg.in/yaml.v3"
 	"pushoo-chan-gover/internal/config"
 	ienc "pushoo-chan-gover/internal/encoding"
 	"pushoo-chan-gover/internal/push"
@@ -296,6 +297,7 @@ func (a *API) serveFrontend(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) handleConfig(w http.ResponseWriter, r *http.Request) {
 	// Authentication is already handled by the global middleware
+	w.Header().Set("Cache-Control", "no-store")
 	switch r.URL.Path {
 	case "/config/download":
 		if r.Method != http.MethodGet {
@@ -303,6 +305,7 @@ func (a *API) handleConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		raw := a.opts.Config.GetRaw()
+		w.Header().Set("X-Config-Revision", a.opts.Config.Revision())
 		w.Header().Set("content-type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, raw)
@@ -316,14 +319,57 @@ func (a *API) handleConfig(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "read body failed: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		if err := a.opts.Config.SetRaw(r.Context(), string(body)); err != nil {
-			http.Error(w, "write config failed: "+err.Error(), http.StatusInternalServerError)
+		if err := a.opts.Config.SetRawIfRevision(r.Context(), string(body), r.Header.Get("If-Match")); err != nil {
+			if errors.Is(err, config.ErrConfigConflict) {
+				http.Error(w, "configuration changed; reload before saving", http.StatusConflict)
+				return
+			}
+			http.Error(w, "invalid configuration: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		w.Header().Set("X-Config-Revision", a.opts.Config.Revision())
 		w.Header().Set("content-type", "application/json; charset=utf-8")
 		if err := json.NewEncoder(w).Encode(map[string]any{"status": "ok", "message": "Configuration updated successfully"}); err != nil {
 			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		}
+	case "/config/data":
+		if r.Method == http.MethodGet {
+			w.Header().Set("X-Config-Revision", a.opts.Config.Revision())
+			w.Header().Set("content-type", "application/json; charset=utf-8")
+			_ = json.NewEncoder(w).Encode(a.opts.Config.Get())
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var cfg config.Config
+		dec := json.NewDecoder(io.LimitReader(r.Body, 2<<20))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&cfg); err != nil {
+			http.Error(w, "invalid configuration: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := config.Validate(cfg); err != nil {
+			http.Error(w, "invalid configuration: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		raw, err := yaml.Marshal(&cfg)
+		if err != nil {
+			http.Error(w, "encode configuration failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := a.opts.Config.SetRawIfRevision(r.Context(), string(raw), r.Header.Get("If-Match")); err != nil {
+			if errors.Is(err, config.ErrConfigConflict) {
+				http.Error(w, "configuration changed; reload before saving", http.StatusConflict)
+				return
+			}
+			http.Error(w, "write config failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("X-Config-Revision", a.opts.Config.Revision())
+		w.Header().Set("content-type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "ok"})
 	default:
 		http.NotFound(w, r)
 	}

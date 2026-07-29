@@ -3,12 +3,14 @@ package config
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,64 +19,64 @@ import (
 
 // Config is kept compatible with the existing `config.yaml` format used by the TS version.
 type Config struct {
-	Channels       []ChannelConfig      `yaml:"channels"`
-	ChannelGroups  []ChannelGroupConfig `yaml:"channel_groups,omitempty"`
-	DefaultChannel string               `yaml:"default_channel,omitempty"`
-	Auth           AuthConfig           `yaml:"auth,omitempty"`
-	PushToken      PushTokenConfig      `yaml:"push_token,omitempty"`
-	Security       SecurityConfig       `yaml:"security,omitempty"`
-	Webhooks       WebhookConfig        `yaml:"webhooks,omitempty"`
+	Channels       []ChannelConfig      `yaml:"channels" json:"channels"`
+	ChannelGroups  []ChannelGroupConfig `yaml:"channel_groups,omitempty" json:"channel_groups"`
+	DefaultChannel string               `yaml:"default_channel,omitempty" json:"default_channel"`
+	Auth           AuthConfig           `yaml:"auth,omitempty" json:"auth"`
+	PushToken      PushTokenConfig      `yaml:"push_token,omitempty" json:"push_token"`
+	Security       SecurityConfig       `yaml:"security,omitempty" json:"security"`
+	Webhooks       WebhookConfig        `yaml:"webhooks,omitempty" json:"webhooks"`
 
 	// Optional extensions (ignored by older configs):
-	SQLite SQLiteConfig `yaml:"sqlite,omitempty"`
+	SQLite SQLiteConfig `yaml:"sqlite,omitempty" json:"sqlite"`
 }
 
 type WebhookConfig struct {
-	Tawk TawkWebhookConfig `yaml:"tawk,omitempty"`
+	Tawk TawkWebhookConfig `yaml:"tawk,omitempty" json:"tawk"`
 }
 
 type TawkWebhookConfig struct {
-	Secret string `yaml:"secret,omitempty"`
-	Chan   string `yaml:"chan,omitempty"`
-	Title  string `yaml:"title,omitempty"`
+	Secret string `yaml:"secret,omitempty" json:"secret"`
+	Chan   string `yaml:"chan,omitempty" json:"chan"`
+	Title  string `yaml:"title,omitempty" json:"title"`
 }
 
 type SQLiteConfig struct {
-	Path                  string `yaml:"path,omitempty"`
-	CleanupDays           int    `yaml:"cleanup_days,omitempty"`
-	CleanupIntervalHours  int    `yaml:"cleanup_interval_hours,omitempty"`
-	RecordChannelMessages bool   `yaml:"record_channel_messages,omitempty"`
+	Path                  string `yaml:"path,omitempty" json:"path"`
+	CleanupDays           int    `yaml:"cleanup_days,omitempty" json:"cleanup_days"`
+	CleanupIntervalHours  int    `yaml:"cleanup_interval_hours,omitempty" json:"cleanup_interval_hours"`
+	RecordChannelMessages bool   `yaml:"record_channel_messages,omitempty" json:"record_channel_messages"`
 }
 
 type AuthConfig struct {
-	User string `yaml:"user,omitempty"`
-	Pass string `yaml:"pass,omitempty"`
+	User string `yaml:"user,omitempty" json:"user"`
+	Pass string `yaml:"pass,omitempty" json:"pass"`
 }
 
 type PushTokenConfig struct {
-	Enabled bool   `yaml:"enabled,omitempty"`
-	Token   string `yaml:"token,omitempty"`
+	Enabled bool   `yaml:"enabled,omitempty" json:"enabled"`
+	Token   string `yaml:"token,omitempty" json:"token"`
 }
 
 type SecurityConfig struct {
-	AuthFailLimit       int `yaml:"auth_fail_limit,omitempty"`
-	AuthBanMinutes      int `yaml:"auth_ban_minutes,omitempty"`
-	TokenFailLimit      int `yaml:"token_fail_limit,omitempty"`
-	TokenBanMinutes     int `yaml:"token_ban_minutes,omitempty"`
-	IPBanMaxEntries     int `yaml:"ip_ban_max_entries,omitempty"`
-	IPBanCleanupSeconds int `yaml:"ip_ban_cleanup_seconds,omitempty"`
-	IPBanIdleMinutes    int `yaml:"ip_ban_idle_minutes,omitempty"`
+	AuthFailLimit       int `yaml:"auth_fail_limit,omitempty" json:"auth_fail_limit"`
+	AuthBanMinutes      int `yaml:"auth_ban_minutes,omitempty" json:"auth_ban_minutes"`
+	TokenFailLimit      int `yaml:"token_fail_limit,omitempty" json:"token_fail_limit"`
+	TokenBanMinutes     int `yaml:"token_ban_minutes,omitempty" json:"token_ban_minutes"`
+	IPBanMaxEntries     int `yaml:"ip_ban_max_entries,omitempty" json:"ip_ban_max_entries"`
+	IPBanCleanupSeconds int `yaml:"ip_ban_cleanup_seconds,omitempty" json:"ip_ban_cleanup_seconds"`
+	IPBanIdleMinutes    int `yaml:"ip_ban_idle_minutes,omitempty" json:"ip_ban_idle_minutes"`
 }
 
 type ChannelConfig struct {
-	Name  string `yaml:"name"`
-	Type  string `yaml:"type"`
-	Token string `yaml:"token"`
+	Name  string `yaml:"name" json:"name"`
+	Type  string `yaml:"type" json:"type"`
+	Token string `yaml:"token" json:"token"`
 }
 
 type ChannelGroupConfig struct {
-	Name string   `yaml:"name"`
-	Use  []string `yaml:"use,omitempty"`
+	Name string   `yaml:"name" json:"name"`
+	Use  []string `yaml:"use,omitempty" json:"use"`
 }
 
 const DefaultConfigYAML = `# pushoo-chan Configuration File
@@ -168,9 +170,10 @@ security:
 type Manager struct {
 	path string
 
-	mu     sync.RWMutex
-	raw    string
-	parsed Config
+	mu      sync.RWMutex
+	writeMu sync.Mutex
+	raw     string
+	parsed  Config
 
 	// Hot reload support
 	watchCancel context.CancelFunc
@@ -196,6 +199,13 @@ func (m *Manager) Get() Config {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.parsed
+}
+
+func (m *Manager) Revision() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	sum := sha256.Sum256([]byte(m.raw))
+	return hex.EncodeToString(sum[:])
 }
 
 func (m *Manager) Reload(_ context.Context) error {
@@ -282,6 +292,25 @@ func (m *Manager) createDefaultConfig() error {
 }
 
 func (m *Manager) SetRaw(_ context.Context, raw string) error {
+	return m.SetRawIfRevision(context.Background(), raw, "")
+}
+
+var ErrConfigConflict = errors.New("configuration changed since it was loaded")
+
+func (m *Manager) SetRawIfRevision(_ context.Context, raw, expectedRevision string) error {
+	m.writeMu.Lock()
+	defer m.writeMu.Unlock()
+
+	var cfg Config
+	if err := yaml.Unmarshal([]byte(raw), &cfg); err != nil {
+		return fmt.Errorf("invalid YAML: %w", err)
+	}
+	if err := Validate(cfg); err != nil {
+		return err
+	}
+	if expectedRevision != "" && expectedRevision != m.Revision() {
+		return ErrConfigConflict
+	}
 	// Write atomically to reduce risk of partial writes.
 	dir := filepath.Dir(m.path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -296,6 +325,51 @@ func (m *Manager) SetRaw(_ context.Context, raw string) error {
 		return err
 	}
 	return m.Reload(context.Background())
+}
+
+func Validate(cfg Config) error {
+	if strings.TrimSpace(cfg.Auth.User) == "" || strings.TrimSpace(cfg.Auth.Pass) == "" {
+		return errors.New("auth.user and auth.pass are required")
+	}
+	targets := make(map[string]string, len(cfg.Channels)+len(cfg.ChannelGroups))
+	for i, ch := range cfg.Channels {
+		ch.Name = strings.TrimSpace(ch.Name)
+		if ch.Name == "" || strings.TrimSpace(ch.Type) == "" {
+			return fmt.Errorf("channel %d must have a name and type", i+1)
+		}
+		if _, exists := targets[ch.Name]; exists {
+			return fmt.Errorf("duplicate target name %q", ch.Name)
+		}
+		targets[ch.Name] = "channel"
+	}
+	for i, group := range cfg.ChannelGroups {
+		group.Name = strings.TrimSpace(group.Name)
+		if group.Name == "" {
+			return fmt.Errorf("channel group %d must have a name", i+1)
+		}
+		if _, exists := targets[group.Name]; exists {
+			return fmt.Errorf("duplicate target name %q", group.Name)
+		}
+		targets[group.Name] = "group"
+	}
+	for _, group := range cfg.ChannelGroups {
+		for _, name := range group.Use {
+			if targets[name] != "channel" {
+				return fmt.Errorf("channel group %q references unknown channel %q", group.Name, name)
+			}
+		}
+	}
+	if cfg.DefaultChannel != "" {
+		if _, ok := targets[cfg.DefaultChannel]; !ok {
+			return fmt.Errorf("default_channel references unknown target %q", cfg.DefaultChannel)
+		}
+	}
+	if cfg.Webhooks.Tawk.Chan != "" {
+		if _, ok := targets[cfg.Webhooks.Tawk.Chan]; !ok {
+			return fmt.Errorf("webhooks.tawk.chan references unknown target %q", cfg.Webhooks.Tawk.Chan)
+		}
+	}
+	return nil
 }
 
 // StartWatching starts watching the config file for changes and automatically reloads it.
